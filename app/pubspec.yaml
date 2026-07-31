@@ -25,6 +25,19 @@ dependencies:
   # wired up until Milestone F3 ("Client foundation") — see
   # docs/IMPLEMENTATION_PLAN.md.
   go_router: 14.2.7
+  # Firebase — first two Flutter Firebase plugins added Milestone F2, for
+  # app/lib/core/auth_state.dart's auth-state provider (docs/API_SPEC.md
+  # §3.9's Phone/OTP sign-up needs firebase_auth on the client; firebase_core
+  # is FlutterFire's mandatory bootstrap dependency every other Firebase
+  # plugin requires). Versions below are a reasoned pin for this vintage of
+  # the FlutterFire BoM, chosen for mutual compatibility with firebase_core
+  # 3.x — same disclosed limitation as every other Flutter dependency in
+  # this file: this sandbox has no pub.dev access to run `flutter pub get`
+  # and verify the resolved set for real. Verify and correct if needed the
+  # same way `functions/package-lock.json` closed the equivalent gap for
+  # Cloud Functions in Milestone F0/F1.
+  firebase_core: 3.6.0
+  firebase_auth: 5.3.1
 
 dev_dependencies:
   flutter_test:
