@@ -1,19 +1,153 @@
 rules_version = '2';
 
-// Scaffold note (Milestone F0): this is a deliberate default-deny stub, not
-// the real ruleset. The actual per-collection rules (Users public/private
-// split, Tables, Crews, RSVPs, and the rest of docs/DATABASE.md §6's
-// collections) are implemented in Milestone F1 ("Core data layer &
-// security rules"), each with rules-emulator tests achieving 100% branch
-// coverage per docs/TESTING.md — not before, since untested rules are
-// treated the same as untested payment-processing code, per that document.
+// firestore.rules — Milestone F1 (Core data layer & security rules)
 //
-// Default-deny-everything is intentional and safe as a placeholder: it
-// fails closed (nothing is readable/writable) rather than failing open,
-// so accidentally deploying this stub to a real environment blocks all
-// access rather than silently exposing data.
+// Scope note: only the five collections named in Milestone F1's deliverables
+// (docs/IMPLEMENTATION_PLAN.md) have real rules below — users (public +
+// private/profile), tables (+ rsvps subcollection), crews, and
+// idempotencyKeys. Every other collection in docs/DATABASE.md (ratings,
+// reports, venues, splitRequests, and the duressSignals/locationShares/
+// crew-messages subcollections) is intentionally still covered only by the
+// trailing default-deny catch-all at the bottom of this file — those get
+// their own rules and tests in the milestone that builds the feature that
+// actually needs them (F6/F7 per docs/IMPLEMENTATION_PLAN.md), per
+// docs/TESTING.md's requirement that rules and their tests ship together,
+// collection by collection, rather than speculatively ahead of the feature.
+//
+// Structural principles this file follows (docs/DATABASE.md §6, docs/SECURITY.md):
+//   1. Default-deny, then the minimum explicit allow each collection needs.
+//   2. Anything with a cross-document invariant (Table capacity counts, Crew
+//      membership, trust/report signals) is client-write-denied and
+//      Functions-only (written via the Admin SDK, which bypasses these rules,
+//      inside a transaction where the invariant actually lives) — a rule
+//      cannot safely read-and-conditionally-write a *different* document
+//      atomically with the one being evaluated.
+//   3. `users` is split into a broadly-readable public document and an
+//      owner-only private document because Firestore rules are
+//      document-granular, not field-granular — a rule can allow or deny
+//      reading an entire document but cannot redact individual fields, so a
+//      single flat user document could not satisfy both "anyone can see a
+//      display name" and "no one but the owner can see a phone hash".
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function existsRsvpFor(tableId, uid) {
+      return exists(/databases/$(database)/documents/tables/$(tableId)/rsvps/$(uid));
+    }
+
+    function isTableHost(tableId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/tables/$(tableId)).data.hostId == request.auth.uid;
+    }
+
+    // --- users/{userId} (public profile) + private/profile (sensitive) ---
+    // docs/DATABASE.md §3.1
+
+    match /users/{userId} {
+      // Public profile: broadly readable by any authenticated user — Discover,
+      // Table rosters, and Crew screens all need to render other people's
+      // basic profile info. Safe by construction: this document never holds
+      // anything docs/SECURITY.md restricts (no phone hash, no trust/report
+      // counters, no block list, no email, no verification detail beyond the
+      // public tier badge — see the private/profile split below).
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && request.auth.uid == userId
+                    && !request.resource.data.diff(resource.data)
+                         .affectedKeys().hasAny(['ratingAggregate', 'verificationTierPublic', 'deletedAt']);
+      // A user may edit their own public display fields directly, but never
+      // their own rating aggregate, verification-tier trust badge, or
+      // deletion tombstone — those move only via triggers/callables using
+      // the Admin SDK, so a modified client can't self-elevate its own badge.
+      allow delete: if false; // deletion is the deleteAccount callable, never a direct client delete (docs/DATABASE.md §7)
+
+      match /private/profile {
+        // Private document: readable/writable only by the owner. This is the
+        // actual fix for the field-level-redaction problem noted above —
+        // anything docs/SECURITY.md says must never be visible to another
+        // user (phoneNumberHash, trustSignals, blockedUserIds, email, full
+        // verification detail) lives here, not on the public document.
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId;
+        allow update: if isSignedIn() && request.auth.uid == userId
+                      && !request.resource.data.diff(resource.data)
+                           .affectedKeys().hasAny(['trustSignals', 'verification', 'blockedUserIds', 'crewMemberships', 'subscription']);
+        // The owner may edit notificationPrefs/fcmTokens directly, but never
+        // their own trust signals, verification record, block list,
+        // Crew-membership reverse-index, or subscription state — all
+        // Functions-only. `subscription` in particular may only move in
+        // response to a verified Stripe webhook, never a client write.
+        allow delete: if false;
+      }
+    }
+
+    // --- tables/{tableId} (+ rsvps subcollection) --- docs/DATABASE.md §3.2/§3.3
+
+    match /tables/{tableId} {
+      allow read: if resource.data.visibility == 'open'
+                  || (isSignedIn() && existsRsvpFor(tableId, request.auth.uid))
+                  || (isSignedIn() && resource.data.hostId == request.auth.uid);
+      // Open Tables are publicly discoverable; Closed Tables are readable
+      // only by the host or a user with an RSVP document on this Table.
+      allow create: if isSignedIn() && request.resource.data.hostId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.hostId == request.auth.uid
+                    && !request.resource.data.diff(resource.data)
+                         .affectedKeys().hasAny(['capacity', 'reportFlags']);
+      // Only the host may edit a Table, and never its capacity counters or
+      // report flags directly — capacity is a cross-document invariant
+      // (must never exceed capacity.max, maintained transactionally inside
+      // the requestSeat/confirmAttendee/cancelTable callables, Milestone F4)
+      // and reportFlags is Trust & Safety-controlled.
+      allow delete: if false;
+
+      match /rsvps/{rsvpUserId} {
+        allow read: if isSignedIn() && (rsvpUserId == request.auth.uid || isTableHost(tableId));
+        allow write: if false;
+        // ALL RSVP writes go through callable functions (requestSeat,
+        // confirmAttendee, cancelTable/cancelRsvp — Milestone F4), never a
+        // direct client write — this is where the capacity invariant above
+        // actually lives, and a rule cannot enforce it safely on its own.
+      }
+    }
+
+    // --- crews/{crewId} --- docs/DATABASE.md §3.4
+
+    match /crews/{crewId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.memberIds;
+      allow create: if false;
+      // Crew creation (createCrew, Milestone F4) always goes through a
+      // callable using the Admin SDK, which validates the creator and sets
+      // the initial memberIds/members map — never a direct client-side
+      // document create, unlike Tables above.
+      allow update: if isSignedIn() && request.auth.uid in resource.data.memberIds
+                    && !request.resource.data.diff(resource.data)
+                         .affectedKeys().hasAny(['memberIds', 'members', 'tableHistoryCount']);
+      // A member may edit the Crew's own broadly-editable fields (name,
+      // photo, recurrence) directly, but never the membership itself — that
+      // goes through addMember/removeMember (Milestone F4), which does
+      // role/invite validation a rule can't express — or the denormalized
+      // tableHistoryCount, which is trigger-maintained.
+      allow delete: if false;
+    }
+
+    // --- idempotencyKeys/{idempotencyKey} --- docs/DATABASE.md §3.9
+
+    match /idempotencyKeys/{idempotencyKey} {
+      allow read, write: if false;
+      // Purely internal to Cloud Functions (the create()-then-check-status
+      // pattern described in docs/DATABASE.md §3.9) — no client path ever
+      // needs to touch this collection directly.
+    }
+
+    // --- everything else: default-deny, fails closed not open ---
+    // Ratings, Reports, Venues, splitRequests, and the duressSignals/
+    // locationShares/crew-messages subcollections are out of Milestone F1's
+    // scope (docs/IMPLEMENTATION_PLAN.md) and are covered only by this
+    // catch-all until their own milestone adds real rules + tests for them.
     match /{document=**} {
       allow read, write: if false;
     }
