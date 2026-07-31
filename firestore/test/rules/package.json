@@ -1,0 +1,20 @@
+{
+  "name": "tablecrew-firestore-rules-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Firestore security rules tests (Milestone F1) for ../../firestore.rules, using @firebase/rules-unit-testing against the Firestore emulator. Run via 'firebase emulators:exec --only firestore \"npm --prefix firestore/test/rules test\"' from the repo root - see docs/TESTING.md's 'Testing Firestore Security Rules' section and .github/workflows/ci.yml's rules-tests job.",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test lib/*.rules.test.js",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage lib/*.rules.test.js"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "3.0.4",
+    "firebase": "10.13.2",
+    "@types/node": "20.16.5",
+    "typescript": "5.6.3"
+  }
+}
