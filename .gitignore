@@ -28,6 +28,18 @@ functions/lib-test/
 functions/coverage/
 npm-debug.log*
 
+# Node / Firestore rules tests (firestore/test/rules/) - Milestone F1
+firestore/test/rules/node_modules/
+firestore/test/rules/lib/
+
+# Node / ops scripts (scripts/) - Milestone F1
+scripts/node_modules/
+scripts/lib/
+
+# Ad hoc local debug output (never committed - see CHANGELOG.md's Milestone
+# F1 entry for why this file exists; delete it locally once you're done)
+rules-test-output.txt
+
 # Firebase
 .firebase/
 firebase-debug.log
