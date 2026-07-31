@@ -112,5 +112,16 @@ export async function callCallable<T>(
     body: JSON.stringify({data}),
   });
   const body = await res.json() as CallableResult<T>['body'];
+  if (!res.ok) {
+    // Debug aid, not just for this one failing run: HttpsError's own
+    // `message` is exactly what distinguishes "our handler's own
+    // `if (!request.auth)` guard fired" (message: 'Sign-in required.') from
+    // "the Functions Framework itself rejected the ID token before our
+    // handler ever ran" (a framework-authored message describing why
+    // verification failed) — the bare HTTP status code alone can't tell
+    // these apart, and test failures without this are much harder to
+    // diagnose from captured output alone.
+    console.error(`[callCallable] ${name} -> ${res.status}:`, JSON.stringify(body.error));
+  }
   return {status: res.status, body};
 }
