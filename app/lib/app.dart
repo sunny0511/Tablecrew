@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:tablecrew/core/theme/app_theme.dart';
 
 /// Root application widget.
 ///
-/// Scaffold note (Milestone F0): this is a minimal placeholder — a bare
-/// [MaterialApp] with Material 3 enabled and no custom theme, routing, or
-/// providers wired in yet. Per docs/IMPLEMENTATION_PLAN.md Milestone F3
-/// ("Client foundation"), this will be replaced with the full
-/// docs/DESIGN_SYSTEM.md-derived [ThemeData] and a [GoRouter] route table
-/// covering the Foundation-scope screens in docs/SCREEN_SPECIFICATIONS.md.
-/// Building that out now, ahead of F1/F2's auth and data-layer work, would
-/// mean theming and routing screens that don't have real data behind them
-/// yet — see Recommendation R7 in docs/IMPLEMENTATION_PLAN.md on not
-/// building ahead of a milestone's actual dependencies.
+/// Milestone F3 update: theming now comes from `TCAppTheme`
+/// (`docs/DESIGN_SYSTEM.md`-derived, Recommendation R3) instead of a bare
+/// Material default. `MaterialApp`'s `themeMode` defaults to
+/// `ThemeMode.system` already, which is exactly §1.4's "Dark mode follows
+/// the OS-level setting by default" — left unset deliberately (an explicit
+/// `themeMode: ThemeMode.system` here would be a redundant-argument lint,
+/// not a different behavior). A manual override is still promised by §1.4
+/// ("always available in Settings") — that's a later feature milestone's
+/// job (F8, Profile/Me and Settings), not this one's.
+///
+/// Routing is still a bare placeholder — the real GoRouter route table
+/// (this same milestone's other deliverable) replaces `home:` below in a
+/// follow-up commit, once the route table exists to wire in.
 class TableCrewApp extends StatelessWidget {
   /// Creates the root application widget.
   const TableCrewApp({super.key});
@@ -20,7 +24,8 @@ class TableCrewApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'TableCrew',
-      theme: ThemeData(useMaterial3: true),
+      theme: TCAppTheme.light(),
+      darkTheme: TCAppTheme.dark(),
       home: const _ScaffoldPlaceholder(),
     );
   }

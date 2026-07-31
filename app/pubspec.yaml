@@ -89,3 +89,40 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Bundled (not runtime-fetched) fonts, per docs/DESIGN_SYSTEM.md §2.1's
+  # explicit rationale: "matters for build size, licensing simplicity, and
+  # consistent rendering across Flutter's cross-platform font-embedding
+  # pipeline" — i.e. deliberately not the `google_fonts` package, which
+  # fetches over the network at runtime and would show a fallback font on
+  # first launch offline. Only the weights docs/DESIGN_SYSTEM.md §2.2's type
+  # scale actually uses are bundled, not every static cut Google Fonts ships:
+  #
+  # - Inter: Regular (400), Medium (500), SemiBold (600) — covers
+  #   type.body.lg/md, type.caption, type.button, type.heading.lg/md.
+  #   Downloaded at the "18pt" optical-size cut (Inter's static export
+  #   splits by optical size; 18pt is tuned for our 12-22px UI-text range,
+  #   not the 24pt/28pt cuts meant for larger display-scale text).
+  # - Fraunces: Regular (400) only, used at weight 400 for both
+  #   type.display.lg/md. Design system §2.2 specifies weight 500 (Medium),
+  #   but this static export's weight stops (Thin/Light/Regular/SemiBold/
+  #   Bold/Black) skip 500 entirely — no Medium cut exists to download.
+  #   Regular is the closer reasoned substitute of the two available
+  #   neighbors (vs. jumping to SemiBold), since the design rationale
+  #   describes Fraunces here as evoking "a handwritten menu or invitation
+  #   card" — an airier, less assertive feel Regular preserves better than
+  #   SemiBold would at 26-34px display sizes. Flagged here and in
+  #   app/lib/core/theme/type_tokens.dart, not silently substituted.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter_18pt-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter_18pt-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter_18pt-SemiBold.ttf
+          weight: 600
+    - family: Fraunces
+      fonts:
+        - asset: assets/fonts/Fraunces_72pt-Regular.ttf
+          weight: 400
