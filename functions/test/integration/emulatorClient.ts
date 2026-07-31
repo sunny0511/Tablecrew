@@ -93,13 +93,22 @@ export interface CallableResult<T> {
  * same wire protocol the Firebase client SDKs use — a POST with a
  * `{"data": ...}` envelope and, when authenticated, a bearer ID token.
  *
- * Deliberately sends no `X-Firebase-AppCheck` header: this project's
- * `firebase.json` doesn't configure an App Check emulator, and the Cloud
- * Functions emulator does not enforce `enforceAppCheck` without one — so
- * these callables' `enforceAppCheck: true` option is inert in this suite.
- * That is a genuine, disclosed gap in what these integration tests can
- * verify (App Check enforcement itself is untested), not an oversight —
- * see TASKS.md's Milestone F2 verification notes.
+ * Deliberately sends no `X-Firebase-AppCheck` header. An earlier version
+ * of this comment assumed the Functions emulator simply doesn't enforce
+ * `enforceAppCheck` without a configured App Check emulator — the first
+ * real run of this suite proved that assumption wrong: every authenticated
+ * request was rejected with a generic `HttpsError('unauthenticated',
+ * 'Unauthenticated')`, Firebase's deliberately non-specific error for
+ * "either Auth or App Check failed," which for a request with a *valid*
+ * Auth token and *no* App Check token can only mean App Check enforcement
+ * really was active. Since there is no App Check emulator anywhere in the
+ * Firebase Emulator Suite, `functions/src/users/index.ts` now only sets
+ * `enforceAppCheck: true` outside the Functions emulator (checked via the
+ * framework-set `FUNCTIONS_EMULATOR` env var) — see that file's header
+ * comment. That means App Check enforcement itself still isn't exercised
+ * by this suite (a genuine, disclosed gap, not an oversight — see
+ * TASKS.md's Milestone F2 verification notes), but everything else these
+ * callables do now is.
  */
 export async function callCallable<T>(
     name: string,

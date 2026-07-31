@@ -25,6 +25,21 @@
  * removes `admin.firestore()`/`admin.auth()`/`admin.firestore.FieldValue`
  * from the namespaced export entirely, a genuine breaking change a real
  * `tsc` build caught, not a style choice.
+ *
+ * `enforceAppCheck` below is `ENFORCE_APP_CHECK`, not a bare `true` —
+ * real emulator testing (functions/test/integration/) found that a
+ * missing App Check token gets rejected with a deliberately generic
+ * `HttpsError('unauthenticated', 'Unauthenticated')`, not a distinguishable
+ * App-Check-specific error (Firebase's own design, to avoid leaking which
+ * layer — Auth or App Check — rejected a request). Since there is no App
+ * Check emulator anywhere in the Firebase Emulator Suite, enforcing it
+ * unconditionally would make every callable permanently untestable
+ * against a local emulator, not just in this repo's test suite but for
+ * any future local development against these functions. `FUNCTIONS_EMULATOR`
+ * is a real, framework-set env var (`true` inside the Functions emulator's
+ * own process, unset in a real deployment) — this is the standard,
+ * documented way to tell the two environments apart, not a workaround
+ * specific to this codebase.
  */
 
 import * as crypto from 'node:crypto';
@@ -34,6 +49,8 @@ import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {isEligibleAge, isWellFormedDateOfBirth} from './ageGate';
 import {deriveResidencyRegion} from './residency';
 import {isValidBio, isValidDisplayName, isValidInterestTags, isValidLocale} from './validation';
+
+const ENFORCE_APP_CHECK = process.env.FUNCTIONS_EMULATOR !== 'true';
 
 function hashPhoneNumber(phoneE164: string): string {
   return crypto.createHash('sha256').update(phoneE164).digest('hex');
@@ -52,7 +69,7 @@ interface ValidateAgeRequest {
  * equally to trusting an earlier server call's result over re-checking).
  */
 export const validateAge = onCall<ValidateAgeRequest>(
-    {enforceAppCheck: true},
+    {enforceAppCheck: ENFORCE_APP_CHECK},
     (request) => {
       if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Sign-in required.');
@@ -86,7 +103,7 @@ interface CompleteAccountSetupRequest {
  * this callable's server-side 18+ re-check cannot be bypassed.
  */
 export const completeAccountSetup = onCall<CompleteAccountSetupRequest>(
-    {enforceAppCheck: true},
+    {enforceAppCheck: ENFORCE_APP_CHECK},
     async (request) => {
       if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Sign-in required.');
@@ -246,7 +263,7 @@ export const completeAccountSetup = onCall<CompleteAccountSetupRequest>(
  * outstanding refresh token for the caller's own uid.
  */
 export const revokeSessions = onCall(
-    {enforceAppCheck: true},
+    {enforceAppCheck: ENFORCE_APP_CHECK},
     async (request) => {
       if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Sign-in required.');
