@@ -40,9 +40,15 @@ describe('firestore.rules: users/{userId} and private/profile', () => {
   });
 
   describe('public document: create', () => {
-    it('allows a user to create their own public profile document', async () => {
+    // Milestone F2: direct client create is now denied for everyone,
+    // including the document's own owner - account creation is exclusively
+    // via the completeAccountSetup callable (functions/src/users/), which
+    // is what makes the server-side 18+ age gate actually enforceable (a
+    // rule can't reject a create() based on computed age; a callable can).
+    // See docs/DATABASE.md §6 for the full before/after rationale.
+    it('denies a user creating their own public profile document directly', async () => {
       const bob = testEnv.authenticatedContext('bob').firestore();
-      await assertSucceeds(setDoc(doc(bob, 'users/bob'), buildUserPublicFixture()));
+      await assertFails(setDoc(doc(bob, 'users/bob'), buildUserPublicFixture()));
     });
 
     it('denies a user creating a public profile document for someone else', async () => {
@@ -107,9 +113,11 @@ describe('firestore.rules: users/{userId} and private/profile', () => {
   });
 
   describe('private/profile: create', () => {
-    it('allows a user to create their own private profile document', async () => {
+    // Same Milestone F2 correction as the public document above - exclusively
+    // created by completeAccountSetup now, never a direct client create.
+    it('denies a user creating their own private profile document directly', async () => {
       const bob = testEnv.authenticatedContext('bob').firestore();
-      await assertSucceeds(setDoc(doc(bob, 'users/bob/private/profile'), buildUserPrivateProfileFixture()));
+      await assertFails(setDoc(doc(bob, 'users/bob/private/profile'), buildUserPrivateProfileFixture()));
     });
 
     it('denies a user creating a private profile document for someone else', async () => {
@@ -138,6 +146,16 @@ describe('firestore.rules: users/{userId} and private/profile', () => {
       await assertFails(updateDoc(doc(alice, 'users/alice/private/profile'), {
         trustSignals: {reportCount: 0, noShowCount: 0, substantiatedBillingDisputeCount: 0, standingStatus: 'restricted'},
       }));
+    });
+
+    it('denies the owner writing their own dateOfBirth directly', async () => {
+      // Milestone F2: dateOfBirth gates a safety/legal requirement (the 18+
+      // age gate) and must not be editable by the account it belongs to
+      // once set at completeAccountSetup time, same reasoning as
+      // `verification`. Fixture's dateOfBirth is fixed; asserting a
+      // genuinely different value.
+      const alice = testEnv.authenticatedContext('alice').firestore();
+      await assertFails(updateDoc(doc(alice, 'users/alice/private/profile'), {dateOfBirth: '1990-01-01'}));
     });
 
     it('denies the owner writing their own blockedUserIds directly', async () => {

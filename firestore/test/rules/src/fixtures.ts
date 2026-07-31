@@ -64,6 +64,7 @@ export interface UserPrivateProfileFixture {
   email: string | null;
   homeLocation: null;
   residencyRegion: string;
+  dateOfBirth: string;
   verification: {
     phoneVerified: boolean;
     idVerified: boolean;
@@ -106,6 +107,7 @@ export function buildUserPrivateProfileFixture(
     email: null,
     homeLocation: null,
     residencyRegion: 'IN',
+    dateOfBirth: '2000-06-15',
     verification: {
       phoneVerified: true,
       idVerified: false,

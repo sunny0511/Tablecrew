@@ -55,7 +55,17 @@ service cloud.firestore {
       // counters, no block list, no email, no verification detail beyond the
       // public tier badge — see the private/profile split below).
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow create: if false;
+      // Corrected in Milestone F2 (was `isSignedIn() && request.auth.uid ==
+      // userId` in F1): that rule only checked *whose* uid was being
+      // created, not *what values* the create() set — a modified client
+      // could have created its own profile with, e.g.,
+      // `verificationTierPublic: "id_verified"` before ever completing
+      // Tier 2. Now that a real account-creation callable exists
+      // (`completeAccountSetup`, Milestone F2, functions/src/users/), it is
+      // the only path by which this document is ever created — matching
+      // how `crews` already works below. See docs/DATABASE.md §6 for the
+      // full rationale.
       allow update: if isSignedIn() && request.auth.uid == userId
                     && !request.resource.data.diff(resource.data)
                          .affectedKeys().hasAny(['ratingAggregate', 'verificationTierPublic', 'deletedAt']);
@@ -72,15 +82,23 @@ service cloud.firestore {
         // user (phoneNumberHash, trustSignals, blockedUserIds, email, full
         // verification detail) lives here, not on the public document.
         allow read: if isSignedIn() && request.auth.uid == userId;
-        allow create: if isSignedIn() && request.auth.uid == userId;
+        allow create: if false;
+        // Corrected in Milestone F2, same reasoning as the public document
+        // above — exclusively created by `completeAccountSetup`, which is
+        // what makes the dateOfBirth-gates-account-creation invariant
+        // (below) actually enforceable: a rule cannot express "reject this
+        // create() if computed age is under 18," but a callable can.
         allow update: if isSignedIn() && request.auth.uid == userId
                       && !request.resource.data.diff(resource.data)
-                           .affectedKeys().hasAny(['trustSignals', 'verification', 'blockedUserIds', 'crewMemberships', 'subscription']);
+                           .affectedKeys().hasAny(['trustSignals', 'verification', 'dateOfBirth', 'blockedUserIds', 'crewMemberships', 'subscription']);
         // The owner may edit notificationPrefs/fcmTokens directly, but never
-        // their own trust signals, verification record, block list,
-        // Crew-membership reverse-index, or subscription state — all
-        // Functions-only. `subscription` in particular may only move in
-        // response to a verified Stripe webhook, never a client write.
+        // their own trust signals, verification record, self-reported date
+        // of birth (Milestone F2 — gates a safety/legal requirement, so
+        // must not be editable by the account it belongs to once set, same
+        // reasoning as `verification`), block list, Crew-membership
+        // reverse-index, or subscription state — all Functions-only.
+        // `subscription` in particular may only move in response to a
+        // verified Stripe webhook, never a client write.
         allow delete: if false;
       }
     }
