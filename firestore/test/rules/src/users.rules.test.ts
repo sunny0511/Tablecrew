@@ -75,6 +75,13 @@ describe('firestore.rules: users/{userId} and private/profile', () => {
     });
 
     it('denies the owner clearing their own deletedAt tombstone', async () => {
+      // Fixture defaults deletedAt to null, so first seed a genuinely
+      // non-null tombstone (simulating an already-soft-deleted account) via
+      // the rules bypass - asserting against a real value change, not a
+      // null-to-null no-op Firestore's diff() wouldn't flag as affected.
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), 'users/alice'), {deletedAt: Date.now()});
+      });
       const alice = testEnv.authenticatedContext('alice').firestore();
       await assertFails(updateDoc(doc(alice, 'users/alice'), {deletedAt: null}));
     });

@@ -84,8 +84,12 @@ describe('firestore.rules: tables/{tableId} and rsvps subcollection', () => {
     });
 
     it('denies the host writing reportFlags directly', async () => {
+      // Fixture defaults reportFlags.isSuppressed to false - assert against
+      // `true` (a genuine value change), not `false` (a no-op write that
+      // Firestore's diff() correctly wouldn't flag as an affected key, which
+      // would make this test pass even with a broken rule).
       const alice = testEnv.authenticatedContext('alice').firestore();
-      await assertFails(updateDoc(doc(alice, 'tables/closed-table'), {'reportFlags.isSuppressed': false}));
+      await assertFails(updateDoc(doc(alice, 'tables/closed-table'), {'reportFlags.isSuppressed': true}));
     });
   });
 

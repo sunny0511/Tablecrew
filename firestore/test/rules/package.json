@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test lib/*.rules.test.js",
-    "test:coverage": "npm run build && node --test --experimental-test-coverage lib/*.rules.test.js"
+    "test": "npm run build && node --test --test-concurrency=1 lib/*.rules.test.js",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage --test-concurrency=1 lib/*.rules.test.js"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "3.0.4",
