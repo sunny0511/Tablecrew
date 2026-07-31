@@ -3,6 +3,23 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'auth_state.g.dart';
 
+// Milestone F3 correction: written Milestone F2 against Riverpod 2.x
+// code-gen conventions, where each `@riverpod`-annotated function got its
+// own generated per-provider `Ref` subclass (e.g. `AuthStateChangesRef`).
+// The founder's first real `flutter analyze` (Riverpod 3.3.2, Milestone F3
+// — see app/pubspec.yaml's dependency comments for why the version jumped)
+// failed with "Undefined class 'AuthStateChangesRef'" etc.: Riverpod 3.x
+// dropped the per-provider named Ref subclasses in favor of one shared
+// generic `Ref` type for every `@riverpod` function, regardless of which
+// provider it annotates. Updated the three signatures below accordingly.
+//
+// A second real `flutter analyze` pass (after regenerating auth_state.g.dart
+// via `dart run build_runner build`) found a second Riverpod 3.x breaking
+// change: `AsyncValue.valueOrNull` was removed — `.value` now has the same
+// "returns null on error" behavior `.valueOrNull` used to provide, per
+// Riverpod's own 3.0 migration guide. Both call sites below updated
+// `.valueOrNull` -> `.value` accordingly.
+
 /// Cross-cutting auth-state stream, per docs/ENGINEERING_GUIDELINES.md's
 /// "State Management: Riverpod" section: "Providers are scoped to the
 /// feature that owns them; only genuinely cross-cutting state (current
@@ -23,16 +40,14 @@ part 'auth_state.g.dart';
 /// Milestone F5's job, built on top of this provider plus the data layer,
 /// not this milestone's.
 ///
-/// Unverified in this environment: no Flutter SDK has been available in
-/// this build environment (same disclosed limitation as every other Dart
-/// file in this repository since Milestone F0). In particular, the
-/// generated `auth_state.g.dart` companion file this `part` directive
-/// requires does not exist yet — it must be produced by running
-/// `flutter pub run build_runner build` (or `build_runner watch`) once a
-/// real Flutter toolchain is available, the same one-time step every
-/// `@riverpod`-annotated file in this codebase will need.
+/// Milestone F3: a real Flutter toolchain (3.44.8) is now available and
+/// `flutter analyze` has run against this file for real — see the
+/// Riverpod 3.x correction note above. The generated `auth_state.g.dart`
+/// companion file this `part` directive requires still needs a
+/// `dart run build_runner build` pass to exist; see this milestone's
+/// verification notes in TASKS.md for whether that's been run yet.
 @riverpod
-Stream<User?> authStateChanges(AuthStateChangesRef ref) {
+Stream<User?> authStateChanges(Ref ref) {
   return FirebaseAuth.instance.authStateChanges();
 }
 
@@ -40,14 +55,14 @@ Stream<User?> authStateChanges(AuthStateChangesRef ref) {
 /// (Tier 1 phone verification complete), independent of onboarding
 /// completeness — see the scope note on [authStateChanges] above.
 @riverpod
-bool isSignedIn(IsSignedInRef ref) {
-  return ref.watch(authStateChangesProvider).valueOrNull != null;
+bool isSignedIn(Ref ref) {
+  return ref.watch(authStateChangesProvider).value != null;
 }
 
 /// Convenience derived provider: the current signed-in user's uid, or null
 /// if signed out. Reading this instead of the full [User] object keeps most
 /// call sites decoupled from the firebase_auth package directly.
 @riverpod
-String? currentUid(CurrentUidRef ref) {
-  return ref.watch(authStateChangesProvider).valueOrNull?.uid;
+String? currentUid(Ref ref) {
+  return ref.watch(authStateChangesProvider).value?.uid;
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'app.dart';
+import 'package:tablecrew/app.dart';
 
 /// Entry point. Wraps the app in a [ProviderScope] so Riverpod providers
 /// are available app-wide, per docs/ENGINEERING_GUIDELINES.md's state

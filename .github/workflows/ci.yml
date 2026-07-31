@@ -54,6 +54,15 @@ jobs:
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
+      # Milestone F3: @riverpod-annotated files' *.g.dart companions are
+      # gitignored, not committed (see .gitignore's comment) - CI generates
+      # them here so `dart format`/`flutter analyze` below see the same
+      # files a local `dart run build_runner build` would produce, without
+      # risking a committed-but-stale generated file drifting from its
+      # source.
+      - name: Generate code (build_runner)
+        working-directory: app
+        run: dart run build_runner build
       - name: dart format (fails on unformatted code)
         working-directory: app
         run: dart format --set-exit-if-changed .
@@ -98,6 +107,9 @@ jobs:
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
+      - name: Generate code (build_runner)
+        working-directory: app
+        run: dart run build_runner build
       - name: Run unit + widget tests
         working-directory: app
         run: flutter test --coverage

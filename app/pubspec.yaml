@@ -19,25 +19,37 @@ dependencies:
     sdk: flutter
   # State management (docs/ENGINEERING_GUIDELINES.md "State Management:
   # Riverpod" — chosen over Bloc/plain Provider; see docs/adr/0001).
-  flutter_riverpod: 2.5.1
-  riverpod_annotation: 2.3.5
-  # Routing. Declared and version-pinned now per Recommendation R5, but not
-  # wired up until Milestone F3 ("Client foundation") — see
-  # docs/IMPLEMENTATION_PLAN.md.
-  go_router: 14.2.7
+  #
+  # Milestone F3 correction: originally pinned to 2.5.1/2.3.5 (Milestone F0),
+  # a reasoned guess with no real pub.dev access to verify. The founder's
+  # first real `flutter pub get` (Flutter 3.44.8/Dart 3.12.2, Milestone F3)
+  # found that pin didn't even resolve — riverpod_generator 2.4.3's
+  # transitive analyzer/macros constraints are incompatible with current
+  # Dart tooling outright, not just "outdated." Riverpod itself has also
+  # moved to a new major version (2.x -> 3.x) since Milestone F0. Bumped to
+  # the exact versions `flutter pub outdated`'s "Resolvable" column reported
+  # as the real, mutually-consistent set (not hand-picked "latest" per
+  # package, since latest-per-package is exactly what failed to resolve).
+  # `app/lib/core/auth_state.dart` was written against Riverpod 2.x
+  # conventions and needs re-verification against 3.x — tracked as a
+  # follow-up in this milestone, not silently assumed compatible.
+  flutter_riverpod: 3.3.2
+  riverpod_annotation: 4.0.3
+  # Routing. Declared and version-pinned since Milestone F0 per
+  # Recommendation R5, wired up starting Milestone F3 — see
+  # docs/IMPLEMENTATION_PLAN.md. Bumped 14.2.7 -> 17.3.0 for the same reason
+  # as the Riverpod packages above (real `flutter pub outdated` result).
+  go_router: 17.3.0
   # Firebase — first two Flutter Firebase plugins added Milestone F2, for
   # app/lib/core/auth_state.dart's auth-state provider (docs/API_SPEC.md
   # §3.9's Phone/OTP sign-up needs firebase_auth on the client; firebase_core
   # is FlutterFire's mandatory bootstrap dependency every other Firebase
-  # plugin requires). Versions below are a reasoned pin for this vintage of
-  # the FlutterFire BoM, chosen for mutual compatibility with firebase_core
-  # 3.x — same disclosed limitation as every other Flutter dependency in
-  # this file: this sandbox has no pub.dev access to run `flutter pub get`
-  # and verify the resolved set for real. Verify and correct if needed the
-  # same way `functions/package-lock.json` closed the equivalent gap for
-  # Cloud Functions in Milestone F0/F1.
-  firebase_core: 3.6.0
-  firebase_auth: 5.3.1
+  # plugin requires). Bumped 3.6.0/5.3.1 -> 4.12.1/6.5.6 (Milestone F3, real
+  # `flutter pub outdated` result) — the Milestone F2 pins were a reasoned
+  # guess made with no pub.dev access; these are the real, verified-resolvable
+  # current versions.
+  firebase_core: 4.12.1
+  firebase_auth: 6.5.6
 
 dev_dependencies:
   flutter_test:
@@ -46,24 +58,34 @@ dev_dependencies:
     sdk: flutter
   # Lint preset (docs/ENGINEERING_GUIDELINES.md "Dart/Flutter Code Style" —
   # chosen over hand-rolled effective_dart rules; see docs/adr/ for the
-  # ADR index).
-  very_good_analysis: 6.0.0
-  riverpod_generator: 2.4.3
-  build_runner: 2.4.13
+  # ADR index). Bumped 6.0.0 -> 10.3.0, same real-`pub-outdated` basis as
+  # the dependencies above.
+  very_good_analysis: 10.3.0
+  # Bumped 2.4.3 -> 4.0.4 / 2.4.13 -> 2.15.1 — see flutter_riverpod's
+  # comment above; 2.4.3 was the pin that failed to resolve outright.
+  riverpod_generator: 4.0.4
+  build_runner: 2.15.1
+  # Golden/visual-regression testing (Recommendation R2). R2 originally
+  # named `golden_toolkit`; as of this milestone `golden_toolkit` is
+  # discontinued and `alchemist` (Very Good Ventures) is the maintained
+  # standard that superseded it — corrected here and in
+  # docs/IMPLEMENTATION_PLAN.md's R2 text in the same pass, not just here.
+  # Added via `flutter pub add --dev alchemist` (real resolver, not a
+  # hand-picked guess) then re-pinned from its default `^0.14.0` caret to an
+  # exact version, matching every other dependency in this file per
+  # Recommendation R5's "pin exact versions" policy.
+  alchemist: 0.14.0
 
-# Scaffold note (Milestone F0): Firebase Flutter plugin versions
-# (firebase_core, cloud_firestore, firebase_auth, cloud_functions,
-# firebase_storage, firebase_messaging, firebase_app_check,
-# firebase_crashlytics, firebase_analytics — all named in
-# docs/FIREBASE.md/docs/ARCHITECTURE.md) are deliberately NOT pinned here
-# yet. Firebase's Flutter packages have interlocking version constraints
-# managed by firebase_core, and this sandbox has no network access to
-# pub.dev to verify a mutually-compatible version set — hand-guessing exact
-# versions here would create false confidence rather than real pinning.
-# These get pinned for real in Milestone F1/F2 when firebase_core is first
-# added and `flutter pub get` can actually be run and verified. See the F0
-# completion summary for this called out as a explicit deviation, not a
-# silent gap.
+# Milestone F0 note, resolved Milestone F2/F3: this section used to list
+# which Firebase Flutter plugins were deliberately not yet pinned pending
+# real `pub get` access. firebase_core/firebase_auth landed F2; the
+# remaining ones (cloud_firestore, cloud_functions, firebase_storage,
+# firebase_messaging, firebase_app_check, firebase_crashlytics,
+# firebase_analytics — all named in docs/FIREBASE.md/docs/ARCHITECTURE.md)
+# are still not pinned, and still deliberately so: each lands in the
+# milestone that first needs it (F4+), verified via a real `flutter pub get`
+# at that time rather than guessed now, per the same lesson this milestone
+# just re-learned about guessing versions without a real resolver.
 
 flutter:
   uses-material-design: true
