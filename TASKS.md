@@ -22,8 +22,10 @@ Delivered alongside the rules: a new `firestore/test/rules/` npm package with on
 
 **Verified for real:** `functions/` — `npm run build` (tsc) clean, `npm run lint` (eslint) clean, `npm run test:coverage` 54/54 passing, 100% line / 96.46% branch / 100% function coverage overall (100/100/100 on the three new `users/` modules specifically).
 
-**NOT yet verified — needs the founder's real run before F2 can be called done, same pattern as F1's 3 real bugs:**
-1. **Rules-emulator tests.** The flipped `assertFails` create-tests and the new `dateOfBirth` restriction test have only been syntax-checked in this sandbox. Run `firebase emulators:exec --only firestore "npm --prefix firestore/test/rules test" --project tablecrew-dev` for real and confirm all tests (55 + the 1 new one = 56) pass.
+**Update (2026-08): rules-emulator verification confirmed.** The founder re-ran `firebase emulators:exec --only firestore "npm --prefix firestore/test/rules test" --project tablecrew-dev` for real against a live emulator — all rules tests, including the two flipped `assertFails` create-tests and the new `dateOfBirth` direct-write-denial test added this milestone, passed. Item 1 below is resolved.
+
+**Still NOT yet verified:**
+1. ~~Rules-emulator tests.~~ **Resolved 2026-08 — see above.**
 2. **The three callables' actual runtime behavior.** `validateAge`/`completeAccountSetup`/`revokeSessions` are verified only via `tsc`/`eslint` on the wrapper code plus real unit tests on the pure logic they call (`ageGate.ts`/`residency.ts`/`validation.ts`). Their actual behavior against real Firestore/Auth (the `batch.create()` transaction, the pre-check/re-check idempotency logic, `admin.auth().revokeRefreshTokens`) has no emulator or integration test yet.
 3. **The entire Flutter side.** No Flutter/Dart toolchain has been available anywhere in this build environment since F0. `auth_state.dart` is only manually brace/paren/bracket-balance-checked; its required `auth_state.g.dart` companion file doesn't exist and needs a real `flutter pub run build_runner build` once a toolchain is available.
 
