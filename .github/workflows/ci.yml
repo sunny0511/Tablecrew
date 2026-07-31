@@ -1,0 +1,183 @@
+name: CI
+
+# Branch-triggered behavior per docs/CI_CD.md: on a PR, stages 1-4 run
+# (lint, unit/widget tests, rules tests, build) - the fast feedback loop.
+# Stages 5-7 (integration tests, deploy to internal testers, staged prod
+# rollout) are intentionally NOT wired up in this workflow yet - they need
+# real Firebase projects and deploy secrets that don't exist until someone
+# actually runs Milestone F0's manual Firebase-project-creation step, and
+# integration tests need more of the app built (Milestone F8). Adding them
+# now would just be permanently-red jobs. See docs/IMPLEMENTATION_PLAN.md.
+"on":
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same PR/branch so pushing a fix doesn't
+# leave a stale run occupying a runner, per docs/CI_CD.md's build-time
+# optimization guidance.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- Stage 1: Lint --------------------------------------------------------
+
+  lint-functions:
+    name: "Stage 1 · Lint · Functions"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: functions/package.json
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Install dependencies
+        working-directory: functions
+        run: npm ci
+      - name: ESLint + TypeScript type-check
+        working-directory: functions
+        run: npm run lint
+
+  lint-flutter:
+    name: "Stage 1 · Lint · Flutter"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: app/.flutter-version
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+      - name: dart format (fails on unformatted code)
+        working-directory: app
+        run: dart format --set-exit-if-changed .
+      - name: flutter analyze (very_good_analysis)
+        working-directory: app
+        run: flutter analyze
+
+  # --- Stage 2: Unit and widget tests ----------------------------------------
+
+  test-functions:
+    name: "Stage 2 · Unit tests · Functions"
+    needs: lint-functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: functions/package.json
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Install dependencies
+        working-directory: functions
+        run: npm ci
+      - name: Build + run unit tests with coverage
+        working-directory: functions
+        run: npm run test:coverage
+      # 85%+ business-logic coverage is a soft gate per docs/TESTING.md - a
+      # human reviews a drop below threshold, CI does not hard-block on it.
+      # No coverage-threshold-enforcing step is added here for that reason.
+
+  test-flutter:
+    name: "Stage 2 · Unit + widget tests · Flutter"
+    needs: lint-flutter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: app/.flutter-version
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+      - name: Run unit + widget tests
+        working-directory: app
+        run: flutter test --coverage
+
+  # --- Stage 3: Firestore rules tests ----------------------------------------
+
+  rules-tests:
+    name: "Stage 3 · Firestore rules tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@13
+      - name: Run rules tests against the emulator
+        run: |
+          if find firestore/test/rules -name '*.test.ts' 2>/dev/null | grep -q .; then
+            firebase emulators:exec --only firestore \
+              "npm --prefix firestore/test/rules test" \
+              --project tablecrew-dev
+          else
+            echo "No Firestore rules tests yet (firestore.rules is a Milestone F0 default-deny stub)."
+            echo "Real rules + rules-emulator tests land together in Milestone F1 - see docs/TESTING.md."
+            echo "This job intentionally passes rather than failing on an expected, documented gap."
+          fi
+
+  # --- Stage 4: Build ---------------------------------------------------------
+
+  build-functions:
+    name: "Stage 4 · Build · Functions"
+    needs: test-functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: functions/package.json
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Install dependencies
+        working-directory: functions
+        run: npm ci
+      - name: tsc build
+        working-directory: functions
+        run: npm run build
+
+  build-flutter-android:
+    name: "Stage 4 · Build · Flutter (Android debug)"
+    needs: test-flutter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: app/.flutter-version
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+      - name: flutter build apk --debug
+        working-directory: app
+        run: flutter build apk --debug
+
+  build-flutter-ios:
+    name: "Stage 4 · Build · Flutter (iOS, no codesign)"
+    needs: test-flutter
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: app/.flutter-version
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+      - name: flutter build ios --debug --no-codesign
+        working-directory: app
+        run: flutter build ios --debug --no-codesign
