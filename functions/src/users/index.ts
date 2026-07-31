@@ -18,10 +18,18 @@
  * generically, alongside the first Milestone F4 endpoints that need it at
  * real scale, than to bespoke-implement three times over for this
  * milestone's three callables. Tracked in TASKS.md, not silently omitted.
+ *
+ * Uses the modular firebase-admin/{app,auth,firestore} imports rather than
+ * the old `import * as admin from 'firebase-admin'` namespaced style —
+ * firebase-admin 14.2.0 (bumped from 12.6.0 this milestone, see TASKS.md)
+ * removes `admin.firestore()`/`admin.auth()`/`admin.firestore.FieldValue`
+ * from the namespaced export entirely, a genuine breaking change a real
+ * `tsc` build caught, not a style choice.
  */
 
 import * as crypto from 'node:crypto';
-import * as admin from 'firebase-admin';
+import {getAuth} from 'firebase-admin/auth';
+import {FieldValue, getFirestore} from 'firebase-admin/firestore';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {isEligibleAge, isWellFormedDateOfBirth} from './ageGate';
 import {deriveResidencyRegion} from './residency';
@@ -121,7 +129,7 @@ export const completeAccountSetup = onCall<CompleteAccountSetupRequest>(
         );
       }
 
-      const db = admin.firestore();
+      const db = getFirestore();
       const publicRef = db.doc(`users/${uid}`);
       const privateRef = db.doc(`users/${uid}/private/profile`);
 
@@ -139,7 +147,7 @@ export const completeAccountSetup = onCall<CompleteAccountSetupRequest>(
         };
       }
 
-      const now = admin.firestore.FieldValue.serverTimestamp();
+      const now = FieldValue.serverTimestamp();
       const phoneNumber = request.auth.token.phone_number;
       const phoneNumberHash = typeof phoneNumber === 'string' ?
         hashPhoneNumber(phoneNumber) :
@@ -244,7 +252,7 @@ export const revokeSessions = onCall(
         throw new HttpsError('unauthenticated', 'Sign-in required.');
       }
 
-      await admin.auth().revokeRefreshTokens(request.auth.uid);
+      await getAuth().revokeRefreshTokens(request.auth.uid);
 
       return {success: true, revokedAt: new Date().toISOString()};
     },

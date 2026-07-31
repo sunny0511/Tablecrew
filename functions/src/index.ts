@@ -13,13 +13,19 @@
  * firebase-functions/firebase-admin toolchain builds and deploys end to end;
  * it is expected to be deleted once the first real endpoint from
  * docs/API_SPEC.md (createTable, per Milestone F4) lands.
+ *
+ * Milestone F2 update: firebase-admin bumped 12.6.0 -> 14.2.0 (see
+ * TASKS.md), which removes the old namespaced `admin.apps` /
+ * `admin.initializeApp()` API entirely in favor of the modular
+ * `firebase-admin/app` import — this is a real breaking change the bump
+ * surfaced via a genuine `tsc` compile error, not a style preference.
  */
 
-import * as admin from 'firebase-admin';
+import {getApps, initializeApp} from 'firebase-admin/app';
 import {onRequest} from 'firebase-functions/v2/https';
 
-if (admin.apps.length === 0) {
-  admin.initializeApp();
+if (getApps().length === 0) {
+  initializeApp();
 }
 
 export * from './tables';

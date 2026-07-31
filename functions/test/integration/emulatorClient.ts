@@ -16,24 +16,28 @@
  * origin/port below is read from this project's firebase.json
  * (`emulators.functions.port: 5001`) directly rather than duplicated as a
  * guess.
+ *
+ * Uses the modular firebase-admin/{app,auth} imports (not the old
+ * `import * as admin from 'firebase-admin'` namespaced style) — see
+ * functions/src/users/index.ts's header comment for why.
  */
 
-import * as admin from 'firebase-admin';
+import {type App, getApps, initializeApp} from 'firebase-admin/app';
+import {getAuth} from 'firebase-admin/auth';
 
 export const PROJECT_ID = process.env.GCLOUD_PROJECT || 'tablecrew-dev';
 export const REGION = 'us-central1';
 export const FUNCTIONS_EMULATOR_ORIGIN = 'http://127.0.0.1:5001';
 export const AUTH_EMULATOR_ORIGIN = 'http://127.0.0.1:9099';
 
-let appInitialized = false;
+let app: App | undefined;
 
 /** Idempotent — safe to call from every test file's `before()` hook. */
-export function ensureAdminApp(): admin.app.App {
-  if (!appInitialized) {
-    admin.initializeApp({projectId: PROJECT_ID});
-    appInitialized = true;
+export function ensureAdminApp(): App {
+  if (!app) {
+    app = getApps()[0] ?? initializeApp({projectId: PROJECT_ID});
   }
-  return admin.app();
+  return app;
 }
 
 /**
@@ -48,7 +52,7 @@ export function ensureAdminApp(): admin.app.App {
 export async function getIdTokenForUid(uid: string, phoneNumber: string): Promise<string> {
   ensureAdminApp();
   try {
-    await admin.auth().createUser({uid, phoneNumber});
+    await getAuth().createUser({uid, phoneNumber});
   } catch (err) {
     const code = (err as {code?: string}).code;
     if (code !== 'auth/uid-already-exists') {
@@ -56,7 +60,7 @@ export async function getIdTokenForUid(uid: string, phoneNumber: string): Promis
     }
   }
 
-  const customToken = await admin.auth().createCustomToken(uid);
+  const customToken = await getAuth().createCustomToken(uid);
 
   const res = await fetch(
       `${AUTH_EMULATOR_ORIGIN}/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=fake-api-key`,

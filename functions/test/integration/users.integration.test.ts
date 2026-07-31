@@ -19,7 +19,8 @@
 
 import assert from 'node:assert/strict';
 import {test, before} from 'node:test';
-import * as admin from 'firebase-admin';
+import {getAuth} from 'firebase-admin/auth';
+import {getFirestore} from 'firebase-admin/firestore';
 import {callCallable, ensureAdminApp, getIdTokenForUid} from './emulatorClient';
 
 before(() => {
@@ -105,7 +106,7 @@ test(
       assert.equal(first.body.result?.uid, uid);
       assert.equal(first.body.result?.verificationTierPublic, 'phone_verified');
 
-      const db = admin.firestore();
+      const db = getFirestore();
       const publicSnap = await db.doc(`users/${uid}`).get();
       const privateSnap = await db.doc(`users/${uid}/private/profile`).get();
       assert.equal(publicSnap.exists, true);
@@ -143,7 +144,7 @@ test("revokeSessions: advances the user's tokensValidAfterTime", async () => {
   const uid = 'itest-revoke';
   const idToken = await getIdTokenForUid(uid, '+911234500006');
 
-  const beforeUser = await admin.auth().getUser(uid);
+  const beforeUser = await getAuth().getUser(uid);
   const beforeTime = beforeUser.tokensValidAfterTime;
 
   const res = await callCallable<{success: boolean; revokedAt: string}>(
@@ -152,6 +153,6 @@ test("revokeSessions: advances the user's tokensValidAfterTime", async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.result?.success, true);
 
-  const afterUser = await admin.auth().getUser(uid);
+  const afterUser = await getAuth().getUser(uid);
   assert.notEqual(afterUser.tokensValidAfterTime, beforeTime);
 });
