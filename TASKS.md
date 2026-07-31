@@ -24,9 +24,17 @@ Delivered alongside the rules: a new `firestore/test/rules/` npm package with on
 
 **Update (2026-08): rules-emulator verification confirmed.** The founder re-ran `firebase emulators:exec --only firestore "npm --prefix firestore/test/rules test" --project tablecrew-dev` for real against a live emulator — all rules tests, including the two flipped `assertFails` create-tests and the new `dateOfBirth` direct-write-denial test added this milestone, passed. Item 1 below is resolved.
 
+**Update (2026-08): Functions emulator integration tests written for item 2, execution still pending.** `functions/test/integration/` now has real (not mocked) Emulator Suite integration tests for `validateAge`/`completeAccountSetup`/`revokeSessions` — they sign in a real emulated Auth user and call the actual deployed callables over HTTP, covering unauthenticated rejection, age-eligibility branches, malformed/invalid input, successful `users/{uid}`+`private/profile` creation with `residencyRegion` derivation, idempotent-on-retry behavior, and `revokeSessions`'s effect on `tokensValidAfterTime`. Verified in this sandbox only via `npm run build:test` (compiles cleanly) — this sandbox has no `firebase-tools` and no registry access to install it (`npm install -g firebase-tools` returns a real 403), so the tests themselves have not been run here. Run via:
+
+```
+firebase emulators:exec --only auth,firestore,functions --project tablecrew-dev "npm --prefix functions run test:integration"
+```
+
+Disclosed, not silently skipped: this project's `firebase.json` has no App Check emulator configured, so `enforceAppCheck: true` is inert in the Functions emulator — these tests cannot verify App Check enforcement itself, only the callables' own logic. See `functions/test/integration/README.md`.
+
 **Still NOT yet verified:**
 1. ~~Rules-emulator tests.~~ **Resolved 2026-08 — see above.**
-2. **The three callables' actual runtime behavior.** `validateAge`/`completeAccountSetup`/`revokeSessions` are verified only via `tsc`/`eslint` on the wrapper code plus real unit tests on the pure logic they call (`ageGate.ts`/`residency.ts`/`validation.ts`). Their actual behavior against real Firestore/Auth (the `batch.create()` transaction, the pre-check/re-check idempotency logic, `admin.auth().revokeRefreshTokens`) has no emulator or integration test yet.
+2. **The three callables' actual runtime behavior.** Tests are written (see above) but not yet executed for real — needs the founder to run the `firebase emulators:exec` command above and report the result.
 3. **The entire Flutter side.** No Flutter/Dart toolchain has been available anywhere in this build environment since F0. `auth_state.dart` is only manually brace/paren/bracket-balance-checked; its required `auth_state.g.dart` companion file doesn't exist and needs a real `flutter pub run build_runner build` once a toolchain is available.
 
 **Deliberately deferred, not a gap:** rate limiting (`docs/API_SPEC.md` §5's sliding-window counters) is not implemented in any of the three new callables — deferred to Milestone F4 as a shared mechanism rather than built bespoke three times now.
