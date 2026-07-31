@@ -1,0 +1,32 @@
+{
+  "name": "tablecrew-functions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TableCrew Cloud Functions backend (Gen 2, TypeScript). See docs/ARCHITECTURE.md and docs/ENGINEERING_GUIDELINES.md.",
+  "engines": {
+    "node": "20"
+  },
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "build:watch": "tsc -p . --watch",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "test": "npm run build && node --test lib/test",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage lib/test",
+    "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "12.6.0",
+    "firebase-functions": "5.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.16.5",
+    "@typescript-eslint/eslint-plugin": "7.18.0",
+    "@typescript-eslint/parser": "7.18.0",
+    "eslint": "8.57.0",
+    "eslint-config-google": "0.14.0",
+    "typescript": "5.6.3"
+  }
+}
