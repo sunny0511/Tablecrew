@@ -44,10 +44,8 @@ abstract final class TCAppTheme {
             borderRadius: BorderRadius.circular(TCSpacing.radiusControl),
           ),
           textStyle: TCTextStyles.button,
-          disabledBackgroundColor:
-              colorScheme.primary.withValues(alpha: 0.4),
-          disabledForegroundColor:
-              colorScheme.onPrimary.withValues(alpha: 0.4),
+          disabledBackgroundColor: colorScheme.primary.withValues(alpha: 0.4),
+          disabledForegroundColor: colorScheme.onPrimary.withValues(alpha: 0.4),
         ),
       ),
       // §4.1 Secondary button: outlined, 1.5px Ink Charcoal border,
