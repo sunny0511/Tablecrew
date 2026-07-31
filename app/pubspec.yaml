@@ -50,6 +50,23 @@ dependencies:
   # current versions.
   firebase_core: 4.12.1
   firebase_auth: 6.5.6
+  # OfflineMutationQueue (Recommendation R1, core/offline/). Added via
+  # `flutter pub add` (real resolver), then re-pinned from the default
+  # caret ranges to exact versions per R5, same treatment as every other
+  # dependency in this file:
+  # - uuid: generates the client-side UUID v4 idempotency key
+  #   docs/API_SPEC.md §2 / functions/src/shared/index.ts's
+  #   isWellFormedIdempotencyKey require.
+  # - shared_preferences: persists the mutationId -> idempotencyKey map
+  #   locally so a retry (even across an app restart) reuses the same
+  #   key rather than minting a new one, per API_SPEC.md §2's explicit
+  #   requirement.
+  # - connectivity_plus: online/offline signal the queue uses to avoid
+  #   attempting a call it already knows will fail, and to know when to
+  #   surface a pending mutation as retryable.
+  uuid: 4.6.0
+  connectivity_plus: 7.3.1
+  shared_preferences: 2.5.5
 
 dev_dependencies:
   flutter_test:

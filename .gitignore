@@ -54,6 +54,8 @@ integration-test-output*.txt
 pub-get-output*.txt
 buildrunner-output.txt
 analyze-output.txt
+pub-add-output*.txt
+format-output.txt
 
 # Firebase
 .firebase/
