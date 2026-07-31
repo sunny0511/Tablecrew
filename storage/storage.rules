@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Scaffold note (Milestone F0): default-deny stub, matching the same
+// approach as firestore/firestore.rules - fails closed rather than open.
+// Real rules (profile photo uploads, Table cover photos - per
+// docs/DATABASE.md's Venue/User photo fields) are implemented once photo
+// upload is actually built (Milestone F5/F6, per docs/IMPLEMENTATION_PLAN.md),
+// not before, consistent with docs/TESTING.md's "untested rules are treated
+// like untested payment code" standard applied to Storage as well as
+// Firestore.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
