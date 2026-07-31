@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "dev": "tablecrew-dev",
+    "staging": "tablecrew-staging",
+    "prod": "tablecrew-prod",
+    "default": "tablecrew-dev"
+  }
+}
