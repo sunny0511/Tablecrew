@@ -1,0 +1,18 @@
+{
+  "name": "tablecrew-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One-off ops scripts, data migrations, and seed scripts, per docs/ENGINEERING_GUIDELINES.md's repository structure. Its own small package (own node_modules), independent of functions/ and firestore/test/rules/ - see scripts/seed_staging.ts's top-of-file note for why this isn't shared code.",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "seed:staging": "npm run build && node lib/seed_staging.js"
+  },
+  "devDependencies": {
+    "firebase-admin": "12.6.0",
+    "@types/node": "20.16.5",
+    "typescript": "5.6.3"
+  }
+}
