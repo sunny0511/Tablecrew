@@ -1,0 +1,251 @@
+/**
+ * User domain: account creation & signup (Tier 1), session revocation. See
+ * docs/API_SPEC.md §3.9 (`validateAge`, `completeAccountSetup`) and §3.8
+ * (`revokeSessions`).
+ *
+ * Added Milestone F2 — this directory did not exist before. Closes a real
+ * gap docs/ENGINEERING_GUIDELINES.md's repository-structure section already
+ * claimed was true ("The `functions/src/` structure mirrors the Firestore
+ * collections described in `DATABASE.md` (Users, Tables, Crews, RSVPs,
+ * Ratings, Reports, Venues)") but which the scaffolded tree never actually
+ * had a `users/` folder for.
+ *
+ * Known gap, disclosed rather than silently skipped: docs/API_SPEC.md §5's
+ * cross-cutting per-user/per-endpoint-family rate limiting (a Firestore-
+ * backed sliding-window counter) is not implemented in any of these three
+ * callables yet. No domain in this codebase has that infra built yet
+ * either — it's a shared mechanism that makes more sense to build once,
+ * generically, alongside the first Milestone F4 endpoints that need it at
+ * real scale, than to bespoke-implement three times over for this
+ * milestone's three callables. Tracked in TASKS.md, not silently omitted.
+ */
+
+import * as crypto from 'node:crypto';
+import * as admin from 'firebase-admin';
+import {HttpsError, onCall} from 'firebase-functions/v2/https';
+import {isEligibleAge, isWellFormedDateOfBirth} from './ageGate';
+import {deriveResidencyRegion} from './residency';
+import {isValidBio, isValidDisplayName, isValidInterestTags, isValidLocale} from './validation';
+
+function hashPhoneNumber(phoneE164: string): string {
+  return crypto.createHash('sha256').update(phoneE164).digest('hex');
+}
+
+interface ValidateAgeRequest {
+  dateOfBirth?: unknown;
+}
+
+/**
+ * docs/API_SPEC.md §3.9 — fast, non-persisting eligibility check backing
+ * Screen 4 (Date of Birth Entry)'s "Continue" round trip. Writes nothing;
+ * the real, authoritative age check happens again at `completeAccountSetup`
+ * below, never trusted from this call alone (docs/SECURITY.md: "not solely
+ * a client-side gate, since client clocks/logic can be manipulated" applies
+ * equally to trusting an earlier server call's result over re-checking).
+ */
+export const validateAge = onCall<ValidateAgeRequest>(
+    {enforceAppCheck: true},
+    (request) => {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Sign-in required.');
+      }
+
+      const {dateOfBirth} = request.data ?? {};
+      if (!isWellFormedDateOfBirth(dateOfBirth)) {
+        throw new HttpsError(
+            'invalid-argument',
+            'dateOfBirth must be a well-formed, non-future ISO 8601 date.',
+        );
+      }
+
+      return {eligible: isEligibleAge(dateOfBirth)};
+    },
+);
+
+interface CompleteAccountSetupRequest {
+  dateOfBirth?: unknown;
+  displayName?: unknown;
+  photoUrl?: unknown;
+  bio?: unknown;
+  interestTags?: unknown;
+  locale?: unknown;
+}
+
+/**
+ * docs/API_SPEC.md §3.9 — the only path by which `users/{uid}` and
+ * `users/{uid}/private/profile` are ever created; `firestore.rules` denies
+ * direct client `create()` for both as of Milestone F2, specifically so
+ * this callable's server-side 18+ re-check cannot be bypassed.
+ */
+export const completeAccountSetup = onCall<CompleteAccountSetupRequest>(
+    {enforceAppCheck: true},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Sign-in required.');
+      }
+      const uid = request.auth.uid;
+
+      const {dateOfBirth, displayName, photoUrl, bio, interestTags, locale} =
+        request.data ?? {};
+
+      if (!isWellFormedDateOfBirth(dateOfBirth)) {
+        throw new HttpsError(
+            'invalid-argument',
+            'dateOfBirth must be a well-formed, non-future ISO 8601 date.',
+        );
+      }
+      if (!isValidDisplayName(displayName)) {
+        throw new HttpsError('invalid-argument', 'displayName must be 1-30 characters.');
+      }
+      if (!isValidBio(bio)) {
+        throw new HttpsError('invalid-argument', 'bio must be at most 140 characters.');
+      }
+      if (!isValidInterestTags(interestTags)) {
+        throw new HttpsError('invalid-argument', 'interestTags requires at least 3 tags.');
+      }
+      if (!isValidLocale(locale)) {
+        throw new HttpsError('invalid-argument', 'locale must be a valid BCP-47 locale tag.');
+      }
+      if (photoUrl !== undefined && photoUrl !== null && typeof photoUrl !== 'string') {
+        throw new HttpsError('invalid-argument', 'photoUrl must be a string or null.');
+      }
+
+      // The actual enforcement point (docs/SECURITY.md's age-gating
+      // section) — validateAge above is a UX convenience only and is never
+      // trusted as having already established this.
+      if (!isEligibleAge(dateOfBirth)) {
+        throw new HttpsError(
+            'failed-precondition',
+            'Account creation requires an age of 18 or older.',
+            {code: 'UNDER_MINIMUM_AGE', message: 'You must be 18 or older to create a TableCrew account.'},
+        );
+      }
+
+      const db = admin.firestore();
+      const publicRef = db.doc(`users/${uid}`);
+      const privateRef = db.doc(`users/${uid}/private/profile`);
+
+      // Idempotent-by-construction (docs/API_SPEC.md §3.9): the caller can
+      // only ever create their own uid's documents, so an existing document
+      // here means this is a genuine retry of this same one-time action,
+      // not a different caller's conflict — return success with the
+      // existing data rather than erroring.
+      const existingPublicDoc = await publicRef.get();
+      if (existingPublicDoc.exists) {
+        const data = existingPublicDoc.data();
+        return {
+          uid,
+          verificationTierPublic: (data && data.verificationTierPublic) || 'phone_verified',
+        };
+      }
+
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const phoneNumber = request.auth.token.phone_number;
+      const phoneNumberHash = typeof phoneNumber === 'string' ?
+        hashPhoneNumber(phoneNumber) :
+        hashPhoneNumber(uid);
+      const residencyRegion = typeof phoneNumber === 'string' ?
+        deriveResidencyRegion(phoneNumber) :
+        'IN';
+
+      const batch = db.batch();
+
+      batch.create(publicRef, {
+        displayName,
+        photoUrl: photoUrl ?? null,
+        bio: bio ?? null,
+        interestTags,
+        verificationTierPublic: 'phone_verified',
+        ratingAggregate: {
+          averageAsHost: null,
+          averageAsAttendee: null,
+          ratingCountAsHost: 0,
+          ratingCountAsAttendee: 0,
+        },
+        locale,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      batch.create(privateRef, {
+        phoneNumberHash,
+        email: null,
+        homeLocation: null,
+        residencyRegion,
+        dateOfBirth,
+        verification: {
+          phoneVerified: true,
+          idVerified: false,
+          verificationTier: 'phone_verified',
+          verifiedAt: now,
+        },
+        trustSignals: {
+          reportCount: 0,
+          noShowCount: 0,
+          substantiatedBillingDisputeCount: 0,
+          standingStatus: 'good',
+        },
+        blockedUserIds: [],
+        notificationPrefs: {
+          categories: {
+            rsvp_updates: true,
+            waitlist_promotion: true,
+            chat_messages: true,
+            crew_recurrence_nudges: true,
+            billing: true,
+            discover_matches: true,
+          },
+          mutedCrewIds: [],
+        },
+        subscription: {
+          tier: 'free',
+          status: 'none',
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+          updatedAt: now,
+        },
+        fcmTokens: [],
+        crewMemberships: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      try {
+        await batch.commit();
+      } catch (err) {
+        // A create()-on-existing-document race (two near-simultaneous
+        // retries) surfaces here as a commit failure - treat it the same
+        // idempotent-by-construction way as the pre-check above, rather
+        // than letting a narrow timing window turn into a client-facing
+        // error for what is still just a retry of the same one-time action.
+        const existing = await publicRef.get();
+        if (existing.exists) {
+          const data = existing.data();
+          return {uid, verificationTierPublic: (data && data.verificationTierPublic) || 'phone_verified'};
+        }
+        throw err;
+      }
+
+      return {uid, verificationTierPublic: 'phone_verified'};
+    },
+);
+
+/**
+ * docs/API_SPEC.md §3.8 — "sign out everywhere." Invalidates every
+ * outstanding refresh token for the caller's own uid.
+ */
+export const revokeSessions = onCall(
+    {enforceAppCheck: true},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Sign-in required.');
+      }
+
+      await admin.auth().revokeRefreshTokens(request.auth.uid);
+
+      return {success: true, revokedAt: new Date().toISOString()};
+    },
+);

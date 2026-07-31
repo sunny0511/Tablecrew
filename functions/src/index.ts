@@ -3,7 +3,8 @@
  *
  * Per docs/ENGINEERING_GUIDELINES.md, this file only re-exports functions
  * defined in the domain directories below (tables/, crews/, discover/,
- * trust/, triggers/) — it should never contain function *logic* itself.
+ * trust/, triggers/, users/) — it should never contain function *logic*
+ * itself.
  *
  * Scaffold note (Milestone F0): no real endpoints exist yet. The domain
  * directories are stubbed out so the directory shape matches
@@ -27,6 +28,7 @@ export * from './discover';
 export * from './trust';
 export * from './shared';
 export * from './triggers';
+export * from './users';
 
 /**
  * Temporary scaffold-verification endpoint. Delete once the first real
