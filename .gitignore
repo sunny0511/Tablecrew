@@ -24,6 +24,7 @@ app/coverage/
 # Node / Cloud Functions (functions/)
 functions/node_modules/
 functions/lib/
+functions/lib-test/
 functions/coverage/
 npm-debug.log*
 

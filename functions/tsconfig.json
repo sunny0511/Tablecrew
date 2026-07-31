@@ -4,7 +4,7 @@
     "module": "commonjs",
     "lib": ["ES2022"],
     "outDir": "lib",
-    "rootDir": ".",
+    "rootDir": "src",
     "sourceMap": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -17,6 +17,6 @@
     "moduleResolution": "node"
   },
   "compileOnSave": true,
-  "include": ["src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["node_modules", "lib"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "lib", "lib-test", "test"]
 }

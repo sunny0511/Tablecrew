@@ -13,7 +13,12 @@
       "ignore": [
         "node_modules",
         ".git",
-        "lib",
+        "src",
+        "test",
+        "lib-test",
+        "tsconfig.test.json",
+        ".env",
+        ".env.*",
         "firebase-debug.log",
         "firebase-debug.*.log",
         "*.local"

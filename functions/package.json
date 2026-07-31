@@ -8,12 +8,13 @@
   },
   "main": "lib/index.js",
   "scripts": {
-    "build": "tsc -p .",
-    "build:watch": "tsc -p . --watch",
+    "build": "tsc -p tsconfig.json",
+    "build:watch": "tsc -p tsconfig.json --watch",
+    "build:test": "tsc -p tsconfig.test.json",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
-    "test": "npm run build && node --test lib/test",
-    "test:coverage": "npm run build && node --test --experimental-test-coverage lib/test",
+    "test": "npm run build:test && node --test lib-test/test/*.test.js",
+    "test:coverage": "npm run build:test && node --test --experimental-test-coverage lib-test/test/*.test.js",
     "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage",
     "deploy": "firebase deploy --only functions"
   },

@@ -32,6 +32,6 @@ export * from './triggers';
  * Temporary scaffold-verification endpoint. Delete once the first real
  * endpoint from docs/API_SPEC.md lands (Milestone F4).
  */
-export const healthCheck = onRequest((req, res) => {
+export const healthCheck = onRequest((_req, res) => {
   res.status(200).json({status: 'ok', service: 'tablecrew-functions'});
 });
