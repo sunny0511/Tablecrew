@@ -37,8 +37,11 @@ scripts/node_modules/
 scripts/lib/
 
 # Ad hoc local debug output (never committed - see CHANGELOG.md's Milestone
-# F1 entry for why this file exists; delete it locally once you're done)
+# F1/F2 entries for why files like this exist; delete them locally once
+# you're done with them)
 rules-test-output.txt
+build-output*.txt
+integration-test-output*.txt
 
 # Firebase
 .firebase/

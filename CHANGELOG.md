@@ -2,6 +2,25 @@
 
 This is the dated record of material changes to the TableCrew knowledge base and, later, the product itself. Every entry states what changed and why — not just what, because the "why" is what keeps future decisions consistent with past reasoning. Entries are in reverse chronological order.
 
+## 2026-08 — Milestone F2 verified: three real emulator runs, two real bugs found and fixed, 8/8 integration tests passing
+
+**What changed:** Closed the two verification items left open by the entry below. First, the founder re-ran the rules-emulator suite for real (`firebase emulators:exec --only firestore ...`) — all tests passed, including the two flipped `assertFails` create-tests and the new `dateOfBirth` restriction test.
+
+Second, and more involved: real Firebase Emulator Suite integration tests were added at `functions/test/integration/` for `validateAge`/`completeAccountSetup`/`revokeSessions` (signing in a real emulated Auth user, calling the actual deployed callables over HTTP — not mocks). Getting these green took three real runs, each surfacing a genuine bug real execution alone could catch:
+
+1. **Run 1 (7/8 failing):** every authenticated call returned a generic `{"message":"Unauthenticated","status":"UNAUTHENTICATED"}` rather than our own handler's `"Sign-in required."` text — proof the rejection happened inside the Functions Framework itself, before our handler ran. The emulator's own log had flagged `firebase-functions@5.1.1` as outdated; founder confirmed current versions via `npm view` (`firebase-functions@7.3.2`, `firebase-admin@14.2.0`) and we bumped to those (commit `e2a6965`).
+2. **The bump surfaced a real compile break:** `firebase-admin@14.2.0` removes the old namespaced `admin.apps`/`admin.initializeApp()`/`admin.firestore()`/`admin.auth()`/`admin.firestore.FieldValue` API entirely — a genuine `tsc` error the founder hit immediately after `npm install`. Migrated every call site (`functions/src/index.ts`, `functions/src/users/index.ts`, `functions/test/integration/*.ts`) to the modular `firebase-admin/{app,auth,firestore}` imports (commit `9bb8846`).
+3. **Run 2, same 7/8 failures:** the version bump didn't fix the original bug. Root cause, finally isolated: `enforceAppCheck: true` really is enforced by the Functions emulator — this suite's original assumption that it wasn't was simply wrong — and Firebase's callable framework returns that same generic `Unauthenticated` error when App Check enforcement fails, deliberately indistinguishable from an Auth failure so as not to leak which layer rejected the request. Since the Firebase Emulator Suite has no App Check emulator at all, `enforceAppCheck: true` made these callables permanently untestable (and undevelopable) locally. Fixed by enforcing App Check only outside the Functions emulator: `ENFORCE_APP_CHECK = process.env.FUNCTIONS_EMULATOR !== 'true'`, using the framework's own env var rather than a bespoke flag (commit `db8a31a`).
+4. **Run 3: 8/8 passing**, with the unauthenticated case's error message now correctly reading back our own `"Sign-in required."` text — confirming the original diagnosis was right. Coverage: unauthenticated rejection; `validateAge`'s eligible/ineligible/malformed-input branches; `completeAccountSetup`'s under-18 and invalid-displayName rejections; successful `users/{uid}` + `private/profile` creation with `residencyRegion` correctly derived from a GB phone number; idempotent-on-retry behavior (`createdAt` unchanged on a second call, no duplicate write); and `revokeSessions` advancing `tokensValidAfterTime`.
+
+**Why this is a separate entry from the one below:** same reasoning as F1's analogous two-entry split — real tool execution surfaced real, previously-undetectable defects (a stale dependency pin, a breaking API removal, and a wrong assumption about local App Check behavior), which this changelog records distinctly from "as-planned, unverified" scaffolding work.
+
+**Disclosed, not silently accepted:** App Check enforcement itself is still not exercised by this suite — it's simply inactive during emulator runs by design now, since there's no way to satisfy it locally; production behavior (`enforceAppCheck: true` outside the emulator) is unchanged. The Flutter toolchain gap (no Flutter SDK available anywhere in this build environment since F0) is carried forward, non-blocking, same as it has been since F0.
+
+**Milestone F2 is now complete.** Milestone F3 may begin per `docs/IMPLEMENTATION_PLAN.md`.
+
+**Documents touched:** `functions/package.json`, `functions/package-lock.json`, `functions/src/index.ts`, `functions/src/users/index.ts`, `functions/test/integration/emulatorClient.ts`, `functions/test/integration/users.integration.test.ts`, `functions/test/integration/README.md`, `.gitignore`, `TASKS.md`, this file.
+
 ## 2026-08 — Milestone F2 (Auth & identity, Tier 1): code complete, verification pending
 
 **What changed:** Implemented Milestone F2 per `docs/IMPLEMENTATION_PLAN.md` and founder go-ahead: phone/OTP sign-up's account-creation step, DOB/age-gate with server-side validation, and session lifecycle (`revokeSessions`).
