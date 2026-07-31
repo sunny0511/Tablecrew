@@ -1,0 +1,9 @@
+# Test files are not public API surface, so we relax the doc-comment
+# requirement here while keeping every other very_good_analysis rule from
+# the parent ../analysis_options.yaml active. Dart's analyzer supports
+# directory-scoped analysis_options.yaml overrides; this is that override.
+include: package:very_good_analysis/analysis_options.yaml
+
+linter:
+  rules:
+    public_member_api_docs: false

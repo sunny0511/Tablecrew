@@ -1,0 +1,19 @@
+# Lint ruleset: very_good_analysis, layered on top of core Dart lints.
+# See docs/ENGINEERING_GUIDELINES.md "Dart/Flutter Code Style" for why this
+# was chosen over flutter_lints or a hand-rolled effective_dart ruleset.
+include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "lib/l10n/**"
+
+linter:
+  rules:
+    # very_good_analysis already enforces public_member_api_docs; explicitly
+    # noted here (rather than silently relied upon) since
+    # docs/ENGINEERING_GUIDELINES.md's "Documentation Standards" section
+    # makes doc comments on public classes/functions a stated requirement,
+    # not just a lint nicety.
+    public_member_api_docs: true

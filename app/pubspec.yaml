@@ -1,0 +1,56 @@
+name: tablecrew
+description: >
+  TableCrew Flutter client. See docs/ARCHITECTURE.md and
+  docs/ENGINEERING_GUIDELINES.md for the architecture and conventions this
+  app follows.
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  # Pinned per Milestone F0 / Recommendation R5. The actual toolchain version
+  # (not just this SDK constraint) is pinned in app/.flutter-version and
+  # referenced by .github/workflows/ci.yml, since pubspec's environment.sdk
+  # is a constraint range by Dart's own design, not an exact single-version
+  # pin — the real "exact pin" lives in .flutter-version.
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # State management (docs/ENGINEERING_GUIDELINES.md "State Management:
+  # Riverpod" — chosen over Bloc/plain Provider; see docs/adr/0001).
+  flutter_riverpod: 2.5.1
+  riverpod_annotation: 2.3.5
+  # Routing. Declared and version-pinned now per Recommendation R5, but not
+  # wired up until Milestone F3 ("Client foundation") — see
+  # docs/IMPLEMENTATION_PLAN.md.
+  go_router: 14.2.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  # Lint preset (docs/ENGINEERING_GUIDELINES.md "Dart/Flutter Code Style" —
+  # chosen over hand-rolled effective_dart rules; see docs/adr/ for the
+  # ADR index).
+  very_good_analysis: 6.0.0
+  riverpod_generator: 2.4.3
+  build_runner: 2.4.13
+
+# Scaffold note (Milestone F0): Firebase Flutter plugin versions
+# (firebase_core, cloud_firestore, firebase_auth, cloud_functions,
+# firebase_storage, firebase_messaging, firebase_app_check,
+# firebase_crashlytics, firebase_analytics — all named in
+# docs/FIREBASE.md/docs/ARCHITECTURE.md) are deliberately NOT pinned here
+# yet. Firebase's Flutter packages have interlocking version constraints
+# managed by firebase_core, and this sandbox has no network access to
+# pub.dev to verify a mutually-compatible version set — hand-guessing exact
+# versions here would create false confidence rather than real pinning.
+# These get pinned for real in Milestone F1/F2 when firebase_core is first
+# added and `flutter pub get` can actually be run and verified. See the F0
+# completion summary for this called out as a explicit deviation, not a
+# silent gap.
+
+flutter:
+  uses-material-design: true
