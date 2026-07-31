@@ -37,6 +37,7 @@ export interface TestUserPrivateProfile {
   email: string | null;
   homeLocation: null;
   residencyRegion: string;
+  dateOfBirth: string;
   verification: {
     phoneVerified: boolean;
     idVerified: boolean;
@@ -114,6 +115,7 @@ export function buildTestUser(overrides: {
       email: null,
       homeLocation: null,
       residencyRegion: 'IN',
+      dateOfBirth: '2000-06-15',
       verification: {
         phoneVerified: true,
         idVerified: false,
