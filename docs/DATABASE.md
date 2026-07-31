@@ -68,6 +68,21 @@ users/{userId}/private/profile          // PRIVATE — readable only by request.
 │   ├─ idVerified: boolean              // true only after successful third-party ID-verification flow (see SECURITY.md)
 │   ├─ verificationTier: string         // enum: "unverified" | "phone_verified" | "id_verified"
 │   └─ verifiedAt: timestamp | null
+├─ dateOfBirth: string                  // ISO 8601 date ("YYYY-MM-DD"), self-reported at Screen 4 (Date of Birth
+│                                       // Entry) and persisted as part of the account-creation write
+│                                       // (`completeAccountSetup`, API_SPEC.md §3.9) alongside the server-side 18+
+│                                       // check that gates account creation entirely (SECURITY.md's "Age Gating and
+│                                       // Minimum Age Enforcement"). Previously undocumented anywhere in this schema
+│                                       // despite SCREEN_SPECIFICATIONS.md Screen 4 requiring a server-validated age
+│                                       // gate — added in Milestone F2 alongside the callable that actually performs
+│                                       // that validation. Lives on the private document (sensitive PII, same
+│                                       // reasoning as `phoneNumberHash`/`email`), and is Functions-only-writable
+│                                       // after creation (§6) — a self-reported field that also gates a safety/legal
+│                                       // requirement must not be editable by the account it belongs to once set,
+│                                       // the same principle already applied to `verification`/`trustSignals`. The
+│                                       // Tier 2 flow (`completeIdentityVerification`, API_SPEC.md §3.7) cross-checks
+│                                       // its ID-derived date of birth against this exact field, per SECURITY.md's
+│                                       // age-gating section.
 ├─ trustSignals: map                    // denormalized safety counters, write-restricted to Functions only
 │   ├─ reportCount: number
 │   ├─ noShowCount: number
@@ -450,7 +465,17 @@ match /databases/{database}/documents {
       // a user may edit their own public display fields, but never their own rating aggregate, verification
       // tier badge, or deletion marker — those are Functions-only, written by triggers/callables using the
       // Admin SDK (which bypasses rules).
-    allow create: if isSignedIn() && request.auth.uid == userId;
+    allow create: if false;
+      // Corrected in Milestone F2: this document previously (Milestone F1) allowed a direct client
+      // create by the document's own owner (`if isSignedIn() && request.auth.uid == userId`), on the
+      // reasoning that a user can only ever create *their own* uid's document, never someone else's.
+      // That reasoning is true but incomplete — Firestore rules cannot restrict which *field values* a
+      // create() call sets, so a modified client could have created its own profile with, e.g.,
+      // `verificationTierPublic: "id_verified"` before ever completing Tier 2, a real self-elevation
+      // bypass. Now that a real account-creation callable exists (`completeAccountSetup`, API_SPEC.md
+      // §3.9), creation is Functions-only, matching how `crews` already works (§3.4) — the callable
+      // validates the DOB/age gate and sets every default field itself via the Admin SDK, which bypasses
+      // this rule entirely, so there is exactly one path by which this document is ever created.
     allow delete: if false; // deletion is handled by the deleteAccount callable, never a direct client delete (§7)
 
     match /private/profile {
@@ -461,13 +486,20 @@ match /databases/{database}/documents {
       allow read: if isSignedIn() && request.auth.uid == userId;
       allow update: if isSignedIn() && request.auth.uid == userId
                     && !request.resource.data.diff(resource.data)
-                         .affectedKeys().hasAny(['trustSignals', 'verification', 'blockedUserIds', 'crewMemberships', 'subscription']);
+                         .affectedKeys().hasAny(['trustSignals', 'verification', 'dateOfBirth', 'blockedUserIds', 'crewMemberships', 'subscription']);
         // a user may edit their own notification prefs / fcmTokens directly, but never their own trust
-        // signals, verification record, block list, crew-membership reverse-index, or subscription state —
-        // Functions/Admin-SDK-only. `subscription` in particular must only ever move in response to a verified
-        // Stripe webhook event (`stripeSubscriptionWebhook`), never a client write, so a modified client can't
-        // grant itself TableCrew+ by writing `tier: "tablecrew_plus"` directly.
-      allow create: if isSignedIn() && request.auth.uid == userId;
+        // signals, verification record, self-reported date of birth (added Milestone F2 — a field that
+        // gates a safety/legal requirement must not be editable by the account it belongs to once set,
+        // same reasoning as `verification`), block list, crew-membership reverse-index, or subscription
+        // state — Functions/Admin-SDK-only. `subscription` in particular must only ever move in response
+        // to a verified Stripe webhook event (`stripeSubscriptionWebhook`), never a client write, so a
+        // modified client can't grant itself TableCrew+ by writing `tier: "tablecrew_plus"` directly.
+      allow create: if false;
+        // Corrected in Milestone F2, same reasoning and same fix as the public document above: creation
+        // is now exclusively via `completeAccountSetup` (API_SPEC.md §3.9), which is what makes the
+        // dateOfBirth-gates-account-creation invariant actually enforceable — a rule alone cannot express
+        // "reject this create() if the computed age is under 18," but a callable can, and only a callable
+        // (Functions-only create) can be trusted to have actually run that check first.
       allow delete: if false;
     }
   }

@@ -246,7 +246,7 @@ OTP Verification, first-time account creation path only.
 - Terracotta primary button ("Continue"), disabled until a complete, plausible date is selected
 
 #### API Calls
-No dedicated named endpoint fires from this screen alone. DOB is staged locally and written as part of the account/profile document created at Profile Setup completion; the age check itself is a lightweight server-side validation round trip (see Loading/Offline below), not one of the seven named business endpoints.
+`validateAge` (`API_SPEC.md` §3.9, added Milestone F2) fires on "Continue" — a fast, non-persisting eligibility check against the server clock (see Loading/Offline below). DOB itself is staged locally, not yet persisted; it's written for real, alongside the redundant server-side age re-check, as part of the account-creation document write at Profile Setup completion (`completeAccountSetup`, `API_SPEC.md` §3.9).
 
 #### Validation Rules
 - Date must be a real calendar date (no Feb 30) and not in the future
@@ -298,7 +298,7 @@ Interest Selection (on save). There is no back-exit to DOB from here — changin
 - Terracotta primary button ("Continue")
 
 #### API Calls
-Photo upload to Cloud Storage; account/profile document creation (the record `createTable`, `requestSeat`, etc. later reference as the acting user), bundled at this step rather than exposed as a separate named endpoint.
+Photo upload to Cloud Storage; account/profile document creation via `completeAccountSetup` (`API_SPEC.md` §3.9, added Milestone F2 — the record `createTable`, `requestSeat`, etc. later reference as the acting user), bundled at this step alongside the interest tags collected on the next screen rather than exposed as two separate calls.
 
 #### Validation Rules
 - First name required, 1–30 characters, soft profanity/impersonation filter (warning, not hard block, to avoid false positives on legitimate names)
@@ -347,7 +347,7 @@ Notification Permission Priming (first-time onboarding path); Settings (if enter
 - Terracotta primary button ("Continue"), disabled until the minimum is met
 
 #### API Calls
-Interests are written to the user's profile document as part of the same account-creation write as Profile Setup on first-time onboarding (no separate named endpoint); on the Settings edit path this is a plain profile field update.
+Interests are written to the user's profile document as part of the same `completeAccountSetup` call (`API_SPEC.md` §3.9) as Profile Setup on first-time onboarding — the client stages this screen's selections locally and fires the one combined call once Profile Setup's fields are also ready, rather than two separate writes; on the Settings edit path this is a plain profile field update instead.
 
 #### Validation Rules
 - Minimum 3 interests required to enable "Continue," ensuring Discover/matching has enough signal

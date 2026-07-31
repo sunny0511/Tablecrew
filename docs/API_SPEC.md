@@ -318,6 +318,46 @@ Formalizes the deletion path already described structurally in `DATABASE.md` §7
 - **Errors:** `failed-precondition` (`NO_PENDING_DELETION`).
 - **Server behavior:** clears `users/{uid}/private/profile.pendingDeletion`, aborting the scheduled sweep before it runs — only meaningful strictly before `gracePeriodEndsAt`; once the sweep has actually executed, the account is gone and there is nothing left to cancel. No idempotency key needed: clearing an already-absent `pendingDeletion` field is a no-op, the same "idempotent by construction" pattern used throughout §3.1-3.2 above.
 
+### 3.9 Account Creation & Signup (Tier 1)
+
+Added in Milestone F2. Both `SCREEN_SPECIFICATIONS.md` Screen 4 (Date of Birth Entry) and Screen 5 (Profile Setup) previously described their server-side behavior only informally — Screen 4 as "a lightweight server-side validation round trip... not one of the seven named business endpoints," Screen 5 as "account/profile document creation... bundled at this step rather than exposed as a separate named endpoint" — the same shape of gap `completeIdentityVerification` (§3.7) and `revokeSessions` (§3.8) closed in earlier passes. Formalized here as two endpoints, matching the two-screen split the product spec already describes: a fast, non-persisting eligibility check the client can call immediately after DOB entry (so a rejected user never wastes time filling out the rest of onboarding), and the actual account-creation write once every field collected across Screens 4-6 is available.
+
+#### `validateAge`
+
+Backs Screen 4's "Continue" round trip. Deliberately read-only and non-persisting — no document is written by this call, and no idempotency key is needed since calling it twice with the same input is trivially safe (it has no side effect to duplicate).
+
+- **Request:** `{ dateOfBirth: string }` — ISO 8601 date (`"YYYY-MM-DD"`), self-reported.
+- **Response:** `{ eligible: boolean }`
+- **Errors:** `invalid-argument` (`dateOfBirth` is not a well-formed ISO 8601 date, or is in the future).
+- **Server behavior:** computes age as of the current server date (never the client's clock, per `SECURITY.md`'s "Age Gating and Minimum Age Enforcement" — client clocks/logic can be manipulated) and returns `eligible: computedAge >= 18`. Does not persist `dateOfBirth` anywhere — that happens only at `completeAccountSetup` below, once the user has actually completed the rest of onboarding. A client that calls this, gets `eligible: true`, and then never completes `completeAccountSetup` (abandons onboarding) leaves no trace of the attempt, which is the intended behavior — this endpoint exists purely to fail fast with a good UX, not to log an audit trail of every DOB a device ever tried.
+- **Abuse prevention:** rate-limited to 20 calls/hour/uid — generous, since a legitimate user might retry after a typo, but bounded against a scripted client probing the boundary condition repeatedly.
+
+#### `completeAccountSetup`
+
+Backs the combined write Screens 5 and 6 (Profile Setup, Interest Selection) describe as one atomic account-creation step. This is the **only** path by which `users/{uid}` and `users/{uid}/private/profile` documents are ever created — both documents' Firestore rules require `allow create: if false` as of Milestone F2 (`DATABASE.md` §6), specifically so this callable's validation (most importantly the server-side 18+ re-check, never trusted from `validateAge` having been called earlier) cannot be bypassed by a modified client writing the documents directly.
+
+- **Request:**
+```
+{
+  dateOfBirth: string,          // required, ISO 8601 date - re-validated server-side, never trusted from
+                                 // an earlier validateAge call alone (SECURITY.md: "never trusted from
+                                 // client state alone")
+  displayName: string,          // required, 1-30 chars, per SCREEN_SPECIFICATIONS.md Screen 5
+  photoUrl?: string | null,     // optional, Cloud Storage download URL (client uploads the photo first,
+                                 // per Screen 5's "photo upload to Cloud Storage" step, then passes the
+                                 // resulting URL here)
+  bio?: string | null,          // optional, max 140 chars, per Screen 5
+  interestTags: string[],       // required, minimum 3, per SCREEN_SPECIFICATIONS.md Screen 6
+  locale: string                // required, BCP-47 locale tag (DATABASE.md §3.1's `locale` field)
+}
+```
+No `idempotencyKey` — deliberately not marked **[idempotent]** in the §2 sense (which would require the general-purpose `idempotencyKeys` store, not yet implemented anywhere in this codebase; it lands in Milestone F4 alongside the first endpoints that genuinely need it, per `functions/src/shared/index.ts`'s scaffold note). This endpoint doesn't need that mechanism: the target document's ID is deterministic (`users/{uid}`, always the caller's own uid), so a retry is naturally, unambiguously idempotent by construction — see Server behavior below — the same "idempotent by construction, no client-supplied key" pattern §3.1-3.2 already use for `cancelTable`/`addMember`/`removeMember`.
+- **Response:** `{ uid: string, verificationTierPublic: "phone_verified" }`
+- **Errors:** `unauthenticated` (no signed-in Firebase Auth user — should be unreachable in the normal flow, since Tier 1 phone verification per `SECURITY.md` already gates every use of the app before this screen is ever reached, but never assumed), `failed-precondition` (`UNDER_MINIMUM_AGE` — computed age is under 18 as of the server's clock; no account is created, matching `SCREEN_SPECIFICATIONS.md` Screen 4's "if computed age is under 18, no account is created and the user sees the hard-stop screen"), `invalid-argument` (`displayName` outside 1-30 chars, `bio` over 140 chars, fewer than 3 `interestTags`, malformed `dateOfBirth`/`locale`).
+- **Server behavior:** validates the full payload (shared Zod schema, same convention as every other endpoint), re-derives age from `dateOfBirth` against the server clock and rejects before any write if under 18 (this is the actual enforcement point `SECURITY.md`'s age-gating section describes — `validateAge` above is a UX convenience, this check is the real gate). Then attempts to `create()` (never `set()`) `users/{uid}` (public) with `displayName`/`photoUrl`/`bio`/`interestTags`/`locale` from the request, `verificationTierPublic: "phone_verified"` (Tier 1 is already complete by construction — the caller reached this screen only via completed phone-OTP sign-in), the zero-value `ratingAggregate` defaults, and `deletedAt: null`; and `users/{uid}/private/profile` with `dateOfBirth`, `phoneNumberHash` (SHA-256 of the E.164 number read from the caller's Firebase Auth ID token claims — the raw number is never read from anywhere else and never persisted, per `DATABASE.md` §3.1), `residencyRegion` (derived server-side from the phone number's country calling code — see the implementation note below), `verification: { phoneVerified: true, idVerified: false, verificationTier: "phone_verified", verifiedAt: now }`, and the zero-value defaults for `trustSignals`/`blockedUserIds`/`notificationPrefs`/`subscription`/`fcmTokens`/`crewMemberships` specified in `DATABASE.md` §3.1. **Idempotent-by-construction behavior:** if `users/{uid}` already exists (a genuine retry after a dropped response — the caller can only ever `create()` their own uid's document, so there is no ambiguity about whose retry this is), the function does not error; it reads back the existing document and returns its current `{uid, verificationTierPublic}` as a success, on the reasoning that a retry of this one-time action should resolve to "your account exists, proceed" rather than surface a confusing error — this endpoint never overwrites an already-created account's fields, so the *original* successful call's data always wins.
+- **Implementation note on `residencyRegion`:** derived from the E.164 phone number's country calling code via a small, explicitly-scoped lookup table, defaulting to `"IN"` for any unrecognized prefix — a reasoned, disclosed placeholder appropriate for Foundation/Phase 0's single-market (Hyderabad, India) scope per `ROADMAP.md`, not a claim of exhaustive international coverage. Revisit this table as international expansion (`SECURITY.md`'s Data Privacy Compliance section) adds markets.
+- **Abuse prevention:** rate-limited to 5 calls/hour/uid, consistent with `SECURITY.md`'s Abuse Prevention section naming "account creation" as a rate-limited sensitive action; layered with the same App-Check/device-attestation secondary limit (§5) as every other endpoint.
+
 ## 4. Versioning Strategy
 
 We version the callable API **implicitly through additive-only evolution plus an explicit client minimum-version gate**, rather than URL/path versioning (which callables don't naturally support the way REST does):
@@ -346,6 +386,7 @@ In addition to the per-endpoint notes above, every callable shares these baselin
 - Identity-verification tiering and re-verification policy underlying `completeIdentityVerification` (§3.7): `SECURITY.md` §Identity Verification Tiers.
 - Duress/emergency response process and the per-Table location-share model underlying `triggerDuressSignal`/`createLocationShare`/`revokeLocationShare` (§3.4): `SECURITY.md` §In-Table Emergency and Duress Response.
 - Data retention, anonymization, and deletion-sweep sequencing underlying `exportUserData`/`deleteAccount`/`cancelPendingDeletion` (§3.8): `DATABASE.md` §7.
+- Age-gating enforcement and the `dateOfBirth` field underlying `validateAge`/`completeAccountSetup` (§3.9): `SECURITY.md` §Age Gating and Minimum Age Enforcement, `DATABASE.md` §3.1/§6.
 
 ## 7. Gap-Closure Note (2026-08 API Readiness Pass)
 
