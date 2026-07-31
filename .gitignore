@@ -1,0 +1,44 @@
+# macOS
+.DS_Store
+
+# Sandbox/local scratch (never committed; see IMPLEMENTATION_PLAN.md environment notes)
+.sandbox-debris/
+
+# Flutter/Dart (app/)
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/.pub-cache/
+app/.pub/
+app/build/
+app/ios/Pods/
+app/ios/.symlinks/
+app/ios/Flutter/Flutter.framework
+app/ios/Flutter/Flutter.podspec
+app/android/.gradle/
+app/android/local.properties
+app/*.iml
+app/coverage/
+
+# Node / Cloud Functions (functions/)
+functions/node_modules/
+functions/lib/
+functions/coverage/
+npm-debug.log*
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Environment / secrets (never commit real secrets — see FIREBASE.md/CI_CD.md)
+.env
+.env.*
+!.env.*.template
+google-services.json
+GoogleService-Info.plist
+*.p12
+*.jks
+*.keystore
