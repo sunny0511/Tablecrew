@@ -115,7 +115,7 @@ We run Dependabot (GitHub-native, zero additional cost or tooling — consistent
 
 Day 1:
 - Get access: GitHub org, Firebase console (dev project only, per `FIREBASE.md`'s environment separation), Slack, this documentation repo.
-- Clone the monorepo, run the Flutter app against the **dev** Firebase project and the Firebase Emulator Suite locally (never point a local dev environment at staging or prod — see `FIREBASE.md` and `SECURITY.md`).
+- Clone the monorepo, run the Flutter app against the **dev** Firebase project and the Firebase Emulator Suite locally (never point a local dev environment at staging or prod — see `FIREBASE.md` and `SECURITY.md`). Concretely, as of Milestone F0: `cd functions && npm install && cd ../app && flutter pub get`, then `firebase emulators:start` from the repo root (uses the ports/config in `firebase.json`) to bring up Firestore/Auth/Functions/Storage locally. Copy `functions/.env.example` to `functions/.env` for any local-only Functions config (empty as of Milestone F0 — no secrets are needed yet). Ask your onboarding buddy for the dev project's `google-services.json`/`GoogleService-Info.plist` if `flutter run` needs to reach the real `tablecrew-dev` project rather than just the emulators.
 - Read, in order: `MISSION.md`, `VALUES.md`, `PRODUCT.md`, `PRD.md`. Understanding *why* TableCrew exists and what it explicitly won't do matters before touching code.
 
 Days 2–3:

@@ -37,6 +37,8 @@ ui-debug.log
 .env
 .env.*
 !.env.*.template
+!.env.example
+!.env.*.example
 google-services.json
 GoogleService-Info.plist
 *.p12
