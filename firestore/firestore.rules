@@ -111,15 +111,44 @@ service cloud.firestore {
                   || (isSignedIn() && resource.data.hostId == request.auth.uid);
       // Open Tables are publicly discoverable; Closed Tables are readable
       // only by the host or a user with an RSVP document on this Table.
-      allow create: if isSignedIn() && request.resource.data.hostId == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.hostId == request.auth.uid
-                    && !request.resource.data.diff(resource.data)
-                         .affectedKeys().hasAny(['capacity', 'reportFlags']);
-      // Only the host may edit a Table, and never its capacity counters or
-      // report flags directly — capacity is a cross-document invariant
-      // (must never exceed capacity.max, maintained transactionally inside
-      // the requestSeat/confirmAttendee/cancelTable callables, Milestone F4)
-      // and reportFlags is Trust & Safety-controlled.
+      allow create: if false;
+      allow update: if false;
+      // Milestone F4 correction: F1 originally allowed a signed-in host to
+      // create() and update() a Table directly (blocking only `capacity`/
+      // `reportFlags` from update), the same category of gap Milestone F2
+      // found and fixed for `users`/`private/profile` — a rule checking
+      // *whose* uid is writing says nothing about *what* gets written.
+      // Concretely, the F1 rule let a client: create a Table bypassing
+      // `createTable`'s idempotency-key check (API_SPEC.md §2) and its
+      // host-field snapshotting/rate limiting; and, worse, write `status`
+      // directly (`"cancelled"`, `"happened"`, ...) bypassing
+      // `cancelTable`'s notification fan-out + Typesense removal and
+      // `endTableEarly`'s `TABLE_NOT_LIVE` precondition entirely, since
+      // `status` was never in the old denylist.
+      //
+      // Unlike `crews` below, which keeps a narrow direct-client-edit
+      // allowance for genuinely invariant-free cosmetic fields (name,
+      // photo), Tables goes fully Functions-only: every field
+      // `updateTable`'s documented patch surface covers (API_SPEC.md
+      // §3.1 — title, description, interestTag, location, startTime,
+      // capacity, visibility) is subject to `updateTable`'s
+      // `CANNOT_EDIT_AFTER_CONFIRMED` business rule (capacity/startTime
+      // cannot shrink/move once `status` is `confirmed` or later), which
+      // depends on comparing against `status` and `capacity.confirmedCount`
+      // conditionally — exactly the kind of single-document-but-still-
+      // conditional invariant this file's principle #2 (see header
+      // comment) says belongs in a callable, not partially re-derived in
+      // rules for some fields but not others. A narrower allowlist here
+      // (permitting only the invariant-free-looking fields like `title`)
+      // was considered and rejected: it's the kind of partial rules
+      // surface a future field addition could easily miscalibrate,
+      // whereas one Functions-only rule for the whole document has no
+      // such failure mode. All Table creation and mutation now goes
+      // through `createTable`/`updateTable`/`requestSeat`/
+      // `confirmAttendee`/`cancelTable`/`cancelRsvp`/`endTableEarly`
+      // (Milestone F4, `functions/src/tables/`), using the Admin SDK,
+      // which bypasses this rule entirely — matching how `crews`
+      // creation and `users`/`private/profile` already work.
       allow delete: if false;
 
       match /rsvps/{rsvpUserId} {
