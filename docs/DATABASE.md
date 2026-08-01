@@ -340,9 +340,14 @@ reports/{reportId}
 ├─ targetType: string                   // enum: "user" | "table"
 ├─ targetId: string                     // uid or tableId depending on targetType
 ├─ reasonCode: string                   // enum: "safety_concern" | "no_show" | "harassment" | "fake_profile" |
-│                                       //   "off_platform_stalking" | "other" — `off_platform_stalking` is its own
-│                                       //   value (not folded into "harassment") so it's separately queryable/trackable,
-│                                       //   per SECURITY.md's "Off-platform contact and stalking after a Table" section
+│                                       //   "off_platform_stalking" | "flagged_media" | "other" — `off_platform_stalking`
+│                                       //   is its own value (not folded into "harassment") so it's separately
+│                                       //   queryable/trackable, per SECURITY.md's "Off-platform contact and stalking
+│                                       //   after a Table" section. `flagged_media` (added Milestone F5) is the only
+│                                       //   reasonCode a human never files directly — it's written by the photo-
+│                                       //   moderation Cloud Function itself (FIREBASE.md §2.5, ADR 0006) on a flagged
+│                                       //   SafeSearch verdict, with `reporterId: "system:photo-moderation"` rather
+│                                       //   than a real uid, since there's no human reporter for an automated flag
 ├─ severity: string                     // enum: "sev1" | "sev2" | "sev3" | null — set at intake (null until triaged
 │                                       //   for reasonCodes without a fixed severity) or fixed at creation for
 │                                       //   reasonCodes with a definitionally-fixed severity (a duress signal is

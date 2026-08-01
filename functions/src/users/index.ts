@@ -90,7 +90,7 @@ export const validateAge = onCall<ValidateAgeRequest>(
 interface CompleteAccountSetupRequest {
   dateOfBirth?: unknown;
   displayName?: unknown;
-  photoUrl?: unknown;
+  photoUploadId?: unknown;
   bio?: unknown;
   interestTags?: unknown;
   locale?: unknown;
@@ -110,7 +110,7 @@ export const completeAccountSetup = onCall<CompleteAccountSetupRequest>(
       }
       const uid = request.auth.uid;
 
-      const {dateOfBirth, displayName, photoUrl, bio, interestTags, locale} =
+      const {dateOfBirth, displayName, photoUploadId, bio, interestTags, locale} =
         request.data ?? {};
 
       if (!isWellFormedDateOfBirth(dateOfBirth)) {
@@ -131,8 +131,12 @@ export const completeAccountSetup = onCall<CompleteAccountSetupRequest>(
       if (!isValidLocale(locale)) {
         throw new HttpsError('invalid-argument', 'locale must be a valid BCP-47 locale tag.');
       }
-      if (photoUrl !== undefined && photoUrl !== null && typeof photoUrl !== 'string') {
-        throw new HttpsError('invalid-argument', 'photoUrl must be a string or null.');
+      if (
+        photoUploadId !== undefined &&
+        photoUploadId !== null &&
+        typeof photoUploadId !== 'string'
+      ) {
+        throw new HttpsError('invalid-argument', 'photoUploadId must be a string or null.');
       }
 
       // The actual enforcement point (docs/SECURITY.md's age-gating
@@ -162,6 +166,39 @@ export const completeAccountSetup = onCall<CompleteAccountSetupRequest>(
           uid,
           verificationTierPublic: (data && data.verificationTierPublic) || 'phone_verified',
         };
+      }
+
+      // Corrected 2026-08, Milestone F5: this used to take a raw
+      // client-supplied `photoUrl` string on faith. It now re-derives the
+      // real URL itself from the moderation-verdict document the
+      // Storage-triggered moderation Function wrote (docs/DATABASE.md
+      // §3.1a, docs/FIREBASE.md §2.5, ADR 0006) — `photoUploadId` is only
+      // ever used as a lookup key into a document this server already
+      // trusts, never as a source of the URL value directly. Because the
+      // lookup path is always `users/${uid}/...` (the caller's own uid,
+      // server-derived from the auth token, never client input), there is
+      // no way for a client to reference another uid's upload.
+      let photoUrl: string | null = null;
+      if (typeof photoUploadId === 'string') {
+        const moderationDoc = await db
+            .doc(`users/${uid}/private/photoModeration/${photoUploadId}`)
+            .get();
+        const moderationData = moderationDoc.data();
+        if (
+          !moderationDoc.exists ||
+          moderationData?.status !== 'approved' ||
+          typeof moderationData?.approvedUrl !== 'string'
+        ) {
+          throw new HttpsError(
+              'failed-precondition',
+              'The referenced photo has not passed moderation review.',
+              {
+                code: 'PHOTO_NOT_APPROVED',
+                message: 'That photo isn\'t ready yet — try again in a moment, or pick another.',
+              },
+          );
+        }
+        photoUrl = moderationData.approvedUrl;
       }
 
       const now = FieldValue.serverTimestamp();

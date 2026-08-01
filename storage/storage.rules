@@ -1,15 +1,70 @@
 rules_version = '2';
 
-// Scaffold note (Milestone F0): default-deny stub, matching the same
-// approach as firestore/firestore.rules - fails closed rather than open.
-// Real rules (profile photo uploads, Table cover photos - per
-// docs/DATABASE.md's Venue/User photo fields) are implemented once photo
-// upload is actually built (Milestone F5/F6, per docs/IMPLEMENTATION_PLAN.md),
-// not before, consistent with docs/TESTING.md's "untested rules are treated
-// like untested payment code" standard applied to Storage as well as
-// Firestore.
+// Milestone F5: real rules for the profile-photo moderation pipeline
+// (docs/FIREBASE.md §2.5, docs/DATABASE.md §3.1a, ADR 0006). Replaces the
+// F0 default-deny stub for the paths this milestone actually needs;
+// everything else stays denied by the fallback rule at the bottom,
+// consistent with docs/TESTING.md's "untested rules are treated like
+// untested payment code" standard — a path with no real feature behind it
+// yet gets no rule, not a guessed-at one.
+//
+// Table cover photos (tables/{tableId}/photos/*) are deliberately NOT
+// covered here — that upload flow isn't built until Milestone F6+, and
+// Storage rules can't cheaply express "is this uid the Table's host"
+// without a Firestore cross-read per rule evaluation, a real design
+// decision that belongs with the milestone that actually builds it, not
+// guessed at ahead of time (same "don't build ahead of a milestone's real
+// dependencies" principle as docs/IMPLEMENTATION_PLAN.md Recommendation R7).
+// The moderation Cloud Function itself (functions/src/) is written
+// generically enough to cover that path once these rules catch up to it.
 service firebase.storage {
   match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Reasoned default abuse-prevention cap, disclosed rather than
+    // unbounded: 10 MiB per photo. Screen 5's own client-side check
+    // (docs/SCREEN_SPECIFICATIONS.md Screen 5) enforces a *minimum*
+    // resolution; this is the server-side maximum-size backstop a client
+    // check alone can't guarantee against a modified client.
+    function isReasonablySizedImage() {
+      return request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // The raw, not-yet-moderated upload. Owner may write their own; owner
+    // may also read it back (e.g. to show a local preview while awaiting
+    // the moderation verdict), but no other client can — an unmoderated
+    // image must never be readable by anyone but its uploader before a
+    // clean verdict copies it to the approved/ path below. The moderation
+    // Cloud Function itself reads via the Admin SDK, which bypasses these
+    // rules entirely, so it needs no explicit allowance here.
+    match /users/{userId}/profile/pending/{uploadId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isReasonablySizedImage();
+    }
+
+    // The post-moderation copy the Cloud Function writes (Admin SDK,
+    // bypassing rules — no client, including the owner, ever writes here
+    // directly) plus whatever responsive-size variants the Resize Images
+    // Extension (docs/FIREBASE.md §2.5) generates alongside it under the
+    // same prefix. Broadly readable by any signed-in user, matching
+    // users/{userId}.photoUrl's own readability (docs/DATABASE.md §3.1) —
+    // Table Cards, Crew rosters, and profile views all need to render
+    // other users' approved photos.
+    match /users/{userId}/profile/approved/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Everything else stays denied, matching the F0 scaffold's fail-closed
+    // posture — a path with no feature behind it yet gets no rule.
     match /{allPaths=**} {
       allow read, write: if false;
     }
