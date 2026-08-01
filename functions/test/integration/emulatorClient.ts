@@ -24,6 +24,7 @@
 
 import {type App, getApps, initializeApp} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
+import {getFirestore} from 'firebase-admin/firestore';
 
 export const PROJECT_ID = process.env.GCLOUD_PROJECT || 'tablecrew-dev';
 export const REGION = 'us-central1';
@@ -62,8 +63,10 @@ export async function getIdTokenForUid(uid: string, phoneNumber: string): Promis
 
   const customToken = await getAuth().createCustomToken(uid);
 
+  const signInUrl = `${AUTH_EMULATOR_ORIGIN}/identitytoolkit.googleapis.com/v1/` +
+    'accounts:signInWithCustomToken?key=fake-api-key';
   const res = await fetch(
-      `${AUTH_EMULATOR_ORIGIN}/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=fake-api-key`,
+      signInUrl,
       {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -110,6 +113,93 @@ export interface CallableResult<T> {
  * TASKS.md's Milestone F2 verification notes), but everything else these
  * callables do now is.
  */
+export interface SeedUserProfileOptions {
+  displayName?: string;
+  standingStatus?: 'good' | 'restricted' | 'banned';
+}
+
+/**
+ * Writes `users/{uid}` (public) + `users/{uid}/private/profile` directly via
+ * the Admin SDK (which bypasses `firestore.rules` entirely, same as every
+ * real callable does), rather than going through `completeAccountSetup`.
+ * Added Milestone F4: the Tables/Crews integration suites below need
+ * precise control over `trustSignals.standingStatus` (to exercise
+ * `createTable`'s `TRUST_STANDING_RESTRICTED` check) that
+ * `completeAccountSetup`'s own request contract has no field for — that
+ * endpoint always creates a fresh account in `standingStatus: "good"`, by
+ * design (docs/API_SPEC.md §3.9's `completeAccountSetup` never accepts a
+ * caller-supplied trust signal, since a self-reported one would defeat the
+ * point). Minimal, schema-shaped per docs/DATABASE.md §3.1 — not a full
+ * fixture library, matching the same "just enough to seed for a rules/
+ * integration test" scope `firestore/test/rules/src/fixtures.ts` and
+ * `scripts/seed_staging.ts` already each keep independently (see
+ * TASKS.md's Milestone F1 note on why those three copies aren't
+ * consolidated).
+ */
+export async function seedUserProfile(
+    uid: string,
+    options: SeedUserProfileOptions = {},
+): Promise<void> {
+  const db = getFirestore();
+  const now = new Date();
+
+  await db.doc(`users/${uid}`).set({
+    displayName: options.displayName ?? `Integration User ${uid}`,
+    photoUrl: null,
+    bio: null,
+    interestTags: [],
+    verificationTierPublic: 'phone_verified',
+    ratingAggregate: {
+      averageAsHost: null,
+      averageAsAttendee: null,
+      ratingCountAsHost: 0,
+      ratingCountAsAttendee: 0,
+    },
+    locale: 'en-IN',
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await db.doc(`users/${uid}/private/profile`).set({
+    phoneNumberHash: 'itest-hash',
+    email: null,
+    homeLocation: null,
+    residencyRegion: 'IN',
+    dateOfBirth: '1990-01-01',
+    verification: {
+      phoneVerified: true,
+      idVerified: false,
+      verificationTier: 'phone_verified',
+      verifiedAt: now,
+    },
+    trustSignals: {
+      reportCount: 0,
+      noShowCount: 0,
+      substantiatedBillingDisputeCount: 0,
+      standingStatus: options.standingStatus ?? 'good',
+    },
+    blockedUserIds: [],
+    notificationPrefs: {
+      categories: {},
+      mutedCrewIds: [],
+    },
+    subscription: {
+      tier: 'free',
+      status: 'none',
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      updatedAt: now,
+    },
+    fcmTokens: [],
+    crewMemberships: [],
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 export async function callCallable<T>(
     name: string,
     data: unknown,
