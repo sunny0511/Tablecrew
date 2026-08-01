@@ -190,6 +190,20 @@ service cloud.firestore {
       // needs to touch this collection directly.
     }
 
+    // --- rateLimits/{bucketId} --- docs/DATABASE.md §3.9a (Milestone F4)
+
+    match /rateLimits/{bucketId} {
+      allow read, write: if false;
+      // Purely internal to Cloud Functions (functions/src/shared/rateLimit.ts)
+      // — no client path ever needs to touch this collection directly. Would
+      // already be covered by the trailing default-deny catch-all below, but
+      // called out explicitly here, same as idempotencyKeys above, since
+      // this file's own principle #1 is "default-deny, then the minimum
+      // explicit allow each collection needs" — an infra collection with
+      // zero client access is worth naming, not just silently relying on
+      // the catch-all to cover it.
+    }
+
     // --- everything else: default-deny, fails closed not open ---
     // Ratings, Reports, Venues, splitRequests, and the duressSignals/
     // locationShares/crew-messages subcollections are out of Milestone F1's

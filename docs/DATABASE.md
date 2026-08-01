@@ -416,7 +416,28 @@ idempotencyKeys/{idempotencyKey}       // idempotencyKey is client-generated (UU
                                         // windows but short enough that this collection doesn't grow unbounded
 ```
 
-**Mechanics:** at the top of any idempotency-key-bearing callable, the function attempts to `create()` (not `set()`) a document at `idempotencyKeys/{idempotencyKey}` with `status: "in_progress"` inside the same transaction as the business logic. If the create fails because the document already exists, the function reads its `status`: `"completed"` means it returns the stored `response` verbatim without re-executing any business logic (no second seat decrement, no second PaymentIntent); `"in_progress"` (a genuine concurrent duplicate, not a retry-after-response) means it returns a `failed-precondition` (`DUPLICATE_REQUEST_IN_FLIGHT`) rather than racing the original. On successful completion, the function updates the document to `status: "completed"` with the response payload, atomically with the business-logic write it's guarding.
+**Mechanics:** at the top of any idempotency-key-bearing callable, the function attempts to `create()` (not `set()`) a document at `idempotencyKeys/{idempotencyKey}` with `status: "in_progress"`. If the create fails because the document already exists, the function reads its `status`: `"completed"` means it returns the stored `response` verbatim without re-executing any business logic (no second seat decrement, no second PaymentIntent); `"in_progress"` (a genuine concurrent duplicate, not a retry-after-response) means it returns a `failed-precondition` (`DUPLICATE_REQUEST_IN_FLIGHT`) rather than racing the original. On successful completion, the function updates the document to `status: "completed"` with the response payload; on failure, it deletes the claim entirely rather than leaving it `"in_progress"` forever, since a genuinely failed attempt is always safe to retry with the same key.
+
+**Correction (2026-08, Milestone F4):** the paragraph above previously said the `"in_progress"` create and the business-logic write happen "inside the same transaction," and that the completion update happens "atomically with the business-logic write it's guarding." Neither is true of the actual implementation (`functions/src/shared/idempotency.ts`): the idempotency-key claim/completion writes are their own separate operations, not merged into whatever transaction the wrapped business logic itself runs (which varies per endpoint — e.g. `requestSeat`'s own capacity-invariant transaction, §5's indexing note). This means there is a narrow window — a crash between the business logic committing and the completion-update running — where a key could be stuck `"in_progress"` despite the underlying action having actually succeeded; a client retrying in that exact window gets `DUPLICATE_REQUEST_IN_FLIGHT` until `expiresAt`'s TTL clears it, rather than an immediate replayed success. This is an availability tradeoff (a rare, bounded delay), not a safety one — no double-booking or double-charge can result, since the business logic's own transaction is what actually enforces those invariants, independent of this store. Merging two independently-shaped transactions (a generic idempotency wrapper's, and each endpoint's own business-specific one) generically was judged not worth the added complexity for this bounded, TTL-recovered edge case; revisit if real-world crash timing ever makes this a practical problem rather than a theoretical one.
+
+### 3.9a `rateLimits/{bucketId}`
+
+Backing store for the per-user, per-endpoint-family rate limits `API_SPEC.md`'s per-endpoint "Abuse prevention" notes describe (e.g. `createTable`'s "10 Table creations per user per rolling 24h," the shared "60 calls/hour" Table-/Crew-mutation families). Explicitly deferred from Milestone F2 to F4 as a shared mechanism (`TASKS.md`'s F2 entry) rather than built bespoke per callable.
+
+```
+rateLimits/{bucketId}                  // bucketId = `${uid}_${family}_${windowStartMs}` — deterministic, so the
+                                        // same caller within the same window always addresses the same document,
+                                        // which is what makes a plain transactional read-check-increment correct
+├─ uid: string
+├─ family: string                      // e.g., "createTable", "tableMutation", "crewMutation" — see
+│                                       //   functions/src/shared/rateLimit.ts for the exact family names in use
+├─ windowStart: timestamp               // the fixed window's start instant
+├─ count: number                       // calls made by this uid, in this family, within this window
+└─ expiresAt: timestamp                // TTL policy field (same mechanism as §3.9), set to windowStart + window
+                                        // length + a small grace buffer, so old buckets don't accumulate forever
+```
+
+**Mechanics:** fixed-window, not sliding-window or token-bucket — `createTable`'s own spec text already described a "counter keyed by uid+day," and a fixed window is the simplest mechanism that satisfies every limit this milestone's scope actually needs (day-granularity for `createTable`, hour-granularity for everything else) without a more complex sliding-window structure nothing here calls for. The well-known fixed-window edge case (a burst straddling a window boundary can momentarily allow up to roughly 2x the stated limit) is an accepted tradeoff at this traffic scale, not an oversight — revisit if real abuse patterns ever exploit it specifically. Each check is its own small atomic Firestore transaction (read the bucket, compare `count` against the limit, increment or reject) — see `API_SPEC.md`'s `createTable` abuse-prevention note for why this doesn't need to be merged into whatever transaction the endpoint's own business logic runs.
 
 ## 4. Denormalization Decisions and Rationale
 

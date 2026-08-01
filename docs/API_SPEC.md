@@ -50,7 +50,7 @@ Creates a new Table with the caller as host.
 - **Response:** `{ tableId: string, status: "proposed" }`
 - **Errors:** `invalid-argument` (bad capacity range, startTime too soon, unknown interestTag), `permission-denied` (`crewId` given but caller is not a member), `failed-precondition` (`TRUST_STANDING_RESTRICTED` — caller's `trustSignals.standingStatus` is `restricted`/`banned`, per `DATABASE.md` §3.1), `failed-precondition` (`DUPLICATE_REQUEST_IN_FLIGHT` — same semantics as `requestSeat` below).
 - **Server behavior:** validates the payload with hand-rolled field-validation helpers (`functions/src/tables/validation.ts`), the same pattern `completeAccountSetup` (§3.9) established rather than a schema-validation library — no such dependency exists in this codebase, and one function per field keeps each validation rule colocated with the screen-spec citation that justifies it, the same way `functions/src/users/validation.ts` already does. **Correction (2026-08, Milestone F4):** this line previously said "a shared Zod schema," written before any callable existed to establish a real precedent; Milestone F2's `completeAccountSetup` set the actual pattern first, and this line is corrected to match rather than left describing a dependency the codebase never adopted. Reads `users/{uid}` to snapshot `hostDisplayNameSnapshot`/`hostPhotoUrlSnapshot`/`hostVerificationTierSnapshot` (`DATABASE.md` §4) onto the new Table document, writes the Table with `status: "proposed"` and `capacity.confirmedCount: 0`. The idempotency-key check (§2) runs first: unlike a counter-mutating endpoint, a retried `createTable` without deduplication doesn't just mis-count something — it creates a second, fully duplicate Proposed Table, which is exactly the failure mode `SCREEN_SPECIFICATIONS.md`'s Create Table screen relies on this endpoint preventing when it auto-fires the same locally-generated `idempotencyKey` on reconnect after an offline draft.
-- **Abuse prevention:** rate-limited to 10 Table creations per user per rolling 24h (checked via a Firestore-backed counter keyed by uid+day, incremented in the same transaction) to prevent spam-Table flooding of Discover; App Check required.
+- **Abuse prevention:** rate-limited to 10 Table creations per user per rolling 24h (checked via a Firestore-backed counter keyed by uid+day) to prevent spam-Table flooding of Discover; App Check required. **Implementation note (2026-08, Milestone F4):** the counter's own read-check-increment is its own small atomic Firestore transaction, run before `createTable`'s main transaction rather than merged into it — this line previously said "incremented in the same transaction," which overstated the coupling. A shared rate-limit helper (`functions/src/shared/rateLimit.ts`) is reused as-is across every endpoint's abuse-prevention check regardless of what that endpoint's own business-logic transaction looks like; correctness only requires the counter itself to be incremented atomically, which a dedicated transaction on the counter document alone already guarantees, independent of the endpoint's separate business transaction.
 
 #### `updateTable`
 
@@ -77,6 +77,7 @@ Host-only action to move a `requested` (Closed Table) or `waitlisted` RSVP to `c
 - **Response:** `{ success: true, newStatus: "confirmed" }`
 - **Errors:** `permission-denied` (caller is not `hostId`), `failed-precondition` (`TABLE_FULL` — confirming would exceed `capacity.max`), `not-found` (no RSVP from `targetUserId` on this Table), `failed-precondition` (`SEAT_REQUEST_CONTENTION`, `DUPLICATE_REQUEST_IN_FLIGHT` — same semantics as `requestSeat`).
 - **Server behavior:** transactional, symmetric to `requestSeat`'s invariant-guarding logic.
+- **Abuse prevention:** standard per-user rate limit shared with other Table-mutation endpoints (60 calls/hour, same family as `updateTable`/`endTableEarly`). **Added 2026-08, Milestone F4:** this endpoint had no stated rate limit at all when originally specified; closed as part of building the shared rate-limiting mechanism §5 names and every other Table-mutation endpoint already documents, rather than leaving one endpoint in the family silently unlimited.
 
 #### `cancelTable`
 
@@ -84,12 +85,14 @@ Host-only action to move a `requested` (Closed Table) or `waitlisted` RSVP to `c
 - **Response:** `{ success: true }`
 - **Errors:** `permission-denied` (caller is neither `hostId` nor a Crew admin for a Crew-linked Table), `failed-precondition` (`ALREADY_HAPPENED`).
 - **Server behavior:** sets `status: "cancelled"`, triggers a notification fan-out (`FIREBASE.md` §Messaging) to all confirmed/waitlisted/requested RSVP holders, and removes the Table from the Typesense index (`ARCHITECTURE.md` §5.5) via the same trigger path used for any status change. Idempotent by construction without a client-supplied key: a retry against an already-`cancelled` Table is a no-op (`success: true`), not an error, since cancelling twice has no additional effect to double-apply.
+- **Abuse prevention:** standard per-user rate limit shared with other Table-mutation endpoints (60 calls/hour, same family as `updateTable`/`endTableEarly`/`confirmAttendee`). **Added 2026-08, Milestone F4**, same reasoning as `confirmAttendee` above.
 
 #### `cancelRsvp` **[idempotent]**
 
 - **Request:** `{ tableId: string, idempotencyKey: string }` (caller cancels their own RSVP)
 - **Response:** `{ success: true }`
 - **Server behavior:** transactionally decrements `confirmedCount`/`waitlistCount` as applicable and, if a confirmed seat opens up, promotes the earliest waitlisted RSVP (also transactional) — this promotion-on-cancel logic is why waitlist promotion is handled here rather than only in the scheduled sweep (`ARCHITECTURE.md` §5.3), which exists purely as a reconciliation safety net. The idempotency key here specifically guards against a retried cancel double-promoting a waitlisted attendee (decrementing the count twice and promoting two people for one freed seat).
+- **Abuse prevention:** standard per-user rate limit shared with other Table-mutation endpoints (60 calls/hour, same family as `updateTable`/`endTableEarly`/`confirmAttendee`/`cancelTable`). **Added 2026-08, Milestone F4**, same reasoning as `confirmAttendee` above.
 
 #### `endTableEarly`
 
@@ -109,6 +112,7 @@ Backs the Live Table Screen's host-only "End Table early" control (`SCREEN_SPECI
 - **Response:** `{ crewId: string }`
 - **Errors:** `invalid-argument` (`name` empty or over 40 chars, per `SCREEN_SPECIFICATIONS.md` Create Crew), `failed-precondition` (`DUPLICATE_REQUEST_IN_FLIGHT` — same semantics as `requestSeat`, §3.1).
 - **Server behavior:** caller becomes `role: "admin"` in `members`; any `initialMemberIds` are added as `role: "member"` pending their own acceptance (see `addMember` below — direct add requires mutual connection or invite acceptance, not unilateral addition, to avoid unwanted-group-add abuse). The idempotency key prevents a retried call (a double-tap on "Create Crew," or the offline-draft-then-reconnect flow `SCREEN_SPECIFICATIONS.md` describes for this screen) from creating a second, duplicate Crew with duplicate membership state — a real risk here since a Crew is a persistent social resource other people get added to, not something safe to silently re-create.
+- **Abuse prevention:** standard per-user rate limit shared with other Crew-mutation endpoints (60 calls/hour, same family as `updateCrew`). **Added 2026-08, Milestone F4:** this endpoint had no stated rate limit at all when originally specified; closed as part of building the shared rate-limiting mechanism §5 names, rather than leaving one endpoint in the family silently unlimited.
 
 #### `updateCrew`
 
@@ -124,12 +128,14 @@ Backs the Live Table Screen's host-only "End Table early" control (`SCREEN_SPECI
 - **Response:** `{ success: true, memberCount: number }`
 - **Errors:** `permission-denied` (caller is not a Crew admin, for the invite form), `failed-precondition` (`CREW_AT_CAPACITY` — Crews have a soft cap enforced here to keep chat/coordination usable, configurable via Remote Config per `FIREBASE.md`), `not-found` (invalid or expired `inviteToken`).
 - **Server behavior:** updates `memberIds` and the denormalized `members` map (`DATABASE.md` §3.4, §4) transactionally so both stay in sync. Idempotent by construction without a client-supplied key: both the `memberIds` update and the `members` map update are set-membership writes (`arrayUnion`-equivalent, keyed by uid), so a retried `addMember` call for a target already present is a no-op returning the current `memberCount` rather than a duplicate membership entry or a double-counted capacity check — the same "idempotent by construction" pattern used by `cancelTable` (§3.1).
+- **Abuse prevention:** standard per-user rate limit shared with other Crew-mutation endpoints (60 calls/hour, same family as `updateCrew`/`createCrew`). **Added 2026-08, Milestone F4**, same reasoning as `createCrew` above.
 
 #### `removeMember` / `leaveCrew`
 
 - **Request:** `{ crewId: string, targetUserId?: string }` (omit `targetUserId` to leave; admin-only to remove someone else)
 - **Response:** `{ success: true }`
 - **Errors:** `permission-denied` (`targetUserId` given but caller is not a Crew admin), `invalid-argument` (`SELF_REMOVE_NOT_ALLOWED` — a caller must use the omit-`targetUserId` leave path to remove themselves, not the admin-remove path, per `SCREEN_SPECIFICATIONS.md` Crew Detail), `not-found` (`targetUserId` is not a current member).
+- **Abuse prevention:** standard per-user rate limit shared with other Crew-mutation endpoints (60 calls/hour, same family as `updateCrew`/`createCrew`/`addMember`). **Added 2026-08, Milestone F4**, same reasoning as `createCrew` above.
 - **Server behavior:** removes the uid from both `memberIds` and the denormalized `members` map (`DATABASE.md` §3.4) transactionally, symmetric to `addMember`. Idempotent by construction without a client-supplied key: removing a uid that's already absent is a no-op (`arrayRemove`-equivalent) returning `success: true` rather than erroring — consistent with `cancelTable`'s (§3.1) treatment of a repeat call against already-settled state.
 
 #### `scheduleRecurringTable` **[idempotent]**
