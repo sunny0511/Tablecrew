@@ -9,5 +9,6 @@ ADRs for decisions with lasting consequences, per `docs/ENGINEERING_GUIDELINES.m
 | [0003](0003-trunk-based-over-git-flow.md) | Branching strategy: trunk-based development over Git Flow | Accepted |
 | [0004](0004-github-actions-over-alternatives.md) | CI/CD platform: GitHub Actions over CircleCI/Bitrise | Accepted |
 | [0005](0005-persona-over-stripe-identity.md) | Identity verification vendor: Persona over Stripe Identity | Accepted |
+| [0006](0006-cloud-vision-safesearch-for-photo-moderation.md) | Photo moderation vendor: Google Cloud Vision SafeSearch over AWS Rekognition / a dedicated moderation vendor | Accepted |
 
-**Note on dates:** these five were backfilled in Milestone F0 (2026-08) for decisions that were already made and justified in prose elsewhere in this knowledge base before any ADR existed — see `docs/IMPLEMENTATION_PLAN.md` Recommendation R4. Going forward, an ADR is written at the time a qualifying decision is made, not backfilled after the fact.
+**Note on dates:** ADRs 0001–0005 were backfilled in Milestone F0 (2026-08) for decisions that were already made and justified in prose elsewhere in this knowledge base before any ADR existed — see `docs/IMPLEMENTATION_PLAN.md` Recommendation R4. ADR 0006 is the first written at decision time rather than backfilled, per this document's stated going-forward practice.

@@ -2,6 +2,28 @@
 
 This is the dated record of material changes to the TableCrew knowledge base and, later, the product itself. Every entry states what changed and why — not just what, because the "why" is what keeps future decisions consistent with past reasoning. Entries are in reverse chronological order.
 
+## 2026-08 — F5 kickoff: photo-moderation pipeline added to scope; real ADR, contract fix, and a Content Moderation overclaim corrected
+
+**What changed, and why:** Milestone F5 (Onboarding, Screens 1–7) begins with Profile Setup (Screen 5), the first real caller of the photo-upload path `docs/FIREBASE.md` §2.5 has described only in the abstract since F0. Surfacing this dependency before writing any code found two real, pre-existing problems, not just a missing implementation: (1) no milestone anywhere in `docs/IMPLEMENTATION_PLAN.md` ever scheduled building the moderation pipeline FIREBASE.md described; (2) `docs/API_SPEC.md` §3.9's `completeAccountSetup` took a raw client-supplied `photoUrl` string on faith, directly contradicting both FIREBASE.md §2.5's "never written directly by the uploading client" rule and `docs/DATABASE.md` §3.1's own "`photoUrl` ... post-moderation" schema comment — three documents disagreed with each other about whether this field was ever actually gated, and none of them were right until now.
+
+**Founder decision:** build the real moderation pipeline now, as part of F5, rather than shipping profile photos trust-first and deferring it — the alternative this session's kickoff discussion offered and disclosed as the lower-scope option.
+
+**New: `docs/adr/0006-cloud-vision-safesearch-for-photo-moderation.md`** — Google Cloud Vision API's SafeSearch Detection, chosen over AWS Rekognition (no accuracy/cost advantage large enough to justify a second cloud vendor on an otherwise all-GCP/Firebase stack) and a dedicated moderation vendor (Sightengine/Hive — broader coverage, but premature before real abuse-pattern data justifies a fourth vendor relationship). Written at decision time, the first ADR in this repository not backfilled after the fact.
+
+**`docs/DATABASE.md`** — new §3.1a, `users/{userId}/private/photoModeration/{uploadId}`: one document per upload attempt, written entirely by the new Storage-triggered moderation Function via the Admin SDK, readable only by the owning uid, writable by no client ever. New Firestore rules block for this subcollection alongside `private/profile`'s existing rules.
+
+**`docs/API_SPEC.md`** §3.9 — `completeAccountSetup`'s `photoUrl` field renamed to `photoUploadId`: the server now looks up the caller's own moderation-verdict document itself and only proceeds if `status == "approved"`, taking the URL from that trusted document rather than the request body. New `PHOTO_NOT_APPROVED` error code covers a client racing ahead of a still-pending verdict, retrying a flagged upload, or sending a fabricated/someone-else's id.
+
+**`docs/FIREBASE.md`** §2.5 — replaced the abstract moderation-hooks paragraph with the concrete mechanics actually being built: the `pending/`/`approved/` Storage path convention, the SafeSearch call, the companion-document contract, and an explicit cross-reference to ADR 0006 and the corrected `API_SPEC.md` contract.
+
+**`docs/SCREEN_SPECIFICATIONS.md`** Screen 5 (Profile Setup) — API Calls, Validation Rules, Loading States, and Offline Behavior all updated: "Continue" now gates on a clean moderation verdict, not merely on the raw upload confirming, with a non-alarming rejection message for a flagged photo per `docs/COPY_GUIDELINES.md`'s tone standard.
+
+**`docs/IMPLEMENTATION_PLAN.md`** — F5's deliverables and estimate both revised (1.5 weeks → 2.5–3 weeks, the moderation pipeline being genuinely new scope, not padding); total Foundation duration estimate revised from 17.5–22 weeks to roughly 18.5–23.5 weeks accordingly.
+
+**A second, related overclaim found and corrected in the same pass, not left standing once the first one was caught:** `docs/SECURITY.md`'s "Content Moderation" section described a two-layer automated-plus-human-review system including known-bad-image-hash matching and a text-moderation pass over descriptions/bios — none of which has an owning milestone or implementation anywhere in this codebase, F5 included. Corrected to describe only what F5 actually builds (automated SafeSearch check on profile photos, routed through the existing Reports/review-task model, no dedicated moderation-queue tool), with hash-matching, text moderation, and Table cover-photo moderation explicitly disclosed as not-yet-built rather than silently implied.
+
+**Documents touched:** `docs/adr/0006-cloud-vision-safesearch-for-photo-moderation.md` (new), `docs/adr/README.md`, `docs/DATABASE.md`, `docs/API_SPEC.md`, `docs/FIREBASE.md`, `docs/SCREEN_SPECIFICATIONS.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/SECURITY.md`, this file.
+
 ## 2026-08 — F0 gap closed: `app/android` and `app/ios` platform directories generated; real Android/iOS client identifiers set
 
 **What changed, and why:** F0's Flutter app scaffold was hand-authored, not `flutter create`-generated, and never produced `app/android`/`app/ios` — a gap only discovered while setting up the retroactive F3/F4 internal demo build (`docs/DEPLOYMENT.md`'s milestone-boundary demo-build practice), since a debug APK can't be built without them. Closed by running `flutter create --platforms=android,ios .` against the existing `pubspec.yaml`. Verified via `git log --all -- app/README.md app/.gitignore app/.metadata` (empty results) that these files — which `flutter create` unconditionally regenerates — were never previously tracked in this repo, so nothing pre-existing was overwritten; the generated files are net-new.

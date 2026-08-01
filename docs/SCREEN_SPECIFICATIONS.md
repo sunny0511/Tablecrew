@@ -298,21 +298,22 @@ Interest Selection (on save). There is no back-exit to DOB from here — changin
 - Terracotta primary button ("Continue")
 
 #### API Calls
-Photo upload to Cloud Storage; account/profile document creation via `completeAccountSetup` (`API_SPEC.md` §3.9, added Milestone F2 — the record `createTable`, `requestSeat`, etc. later reference as the acting user), bundled at this step alongside the interest tags collected on the next screen rather than exposed as two separate calls.
+Photo upload to Cloud Storage (`users/{uid}/profile/pending/{uploadId}`, `FIREBASE.md` §2.5); account/profile document creation via `completeAccountSetup` (`API_SPEC.md` §3.9, added Milestone F2, `photoUploadId` field added Milestone F5 — the record `createTable`, `requestSeat`, etc. later reference as the acting user), bundled at this step alongside the interest tags collected on the next screen rather than exposed as two separate calls. **Updated Milestone F5:** between the raw upload and calling `completeAccountSetup`, the client listens to `users/{uid}/private/photoModeration/{uploadId}` (`DATABASE.md` §3.1a) for the moderation verdict the Storage-triggered Function (`FIREBASE.md` §2.5, ADR 0006) writes — `completeAccountSetup` is only called once that document reads `status: "approved"`, passing its `uploadId` as `photoUploadId`.
 
 #### Validation Rules
 - First name required, 1–30 characters, soft profanity/impersonation filter (warning, not hard block, to avoid false positives on legitimate names)
-- Photo required before "Continue" enables — client-side minimum-resolution check (400x400) plus a friendly (non-blocking) nudge if the image looks obviously non-human (e.g., a pure logo or screenshot)
+- Photo required before "Continue" enables — client-side minimum-resolution check (400x400) plus a friendly (non-blocking) nudge if the image looks obviously non-human (e.g., a pure logo or screenshot). This client-side check is a UX nicety only, distinct from and in addition to the server-side moderation gate below — it catches "wrong kind of image" before upload; moderation catches "policy-violating image" after.
 - Bio capped at 140 characters with a live counter
+- **Added Milestone F5:** "Continue" additionally requires the uploaded photo's moderation verdict to read `"approved"` (`DATABASE.md` §3.1a) — a `"flagged"` verdict routes back to the photo picker with a plain, non-alarming Inter message ("That photo didn't pass our review — try another") per `COPY_GUIDELINES.md`'s tone standard, never exposing the specific SafeSearch category to the user.
 
 #### Loading States
-The photo picker shows a skeleton-pulse placeholder in the exact aspect ratio of the final avatar (Card Cream tone) while uploading, so layout never jumps. "Continue" disables and shows an inline skeleton-pulse during document save.
+The photo picker shows a skeleton-pulse placeholder in the exact aspect ratio of the final avatar (Card Cream tone) while uploading, so layout never jumps. Once the raw upload completes, the placeholder's microcopy changes to "Reviewing your photo..." while the client awaits the moderation verdict (typically low single-digit seconds for a single SafeSearch call, per ADR 0006 — never a spinner, still the same skeleton-pulse treatment). "Continue" disables and shows an inline skeleton-pulse during document save.
 
 #### Empty States
 The photo picker's unselected state is a dashed-outline tile with a camera icon and Inter microcopy ("Add a photo") rather than a blank tile.
 
 #### Offline Behavior
-Name and bio persist as a local draft immediately (no data loss on backgrounding). Photo upload queues and retries automatically on reconnect, with a persistent inline "Uploading when you're back online" banner. "Continue" stays disabled until the photo upload confirms server-side — a Table Card can never render with a missing avatar.
+Name and bio persist as a local draft immediately (no data loss on backgrounding). Photo upload queues and retries automatically on reconnect, with a persistent inline "Uploading when you're back online" banner. "Continue" stays disabled until the moderation verdict confirms `"approved"` server-side (not merely until the raw upload confirms, corrected Milestone F5 to match the moderation gate above) — a Table Card can never render with a missing, or unmoderated, avatar.
 
 #### Analytics Events
 - `onboarding_step_completed` (new; `step: "profile_setup"`)

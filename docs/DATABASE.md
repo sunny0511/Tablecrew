@@ -139,6 +139,30 @@ Note: raw phone numbers live only in Firebase Auth (which is purpose-built to st
 
 **Reads that need both documents** (e.g., the owner's own settings screen) issue two reads — a `get()` on `users/{userId}` plus one on `users/{userId}/private/profile` — which is a negligible cost relative to the alternative of over-broad field exposure; this is a standard, well-understood Firestore pattern, not a novel workaround.
 
+### 3.1a `users/{userId}/private/photoModeration/{uploadId}`
+
+Added Milestone F5, closing a gap `completeAccountSetup` (§3.9 below, `API_SPEC.md` §3.9) previously left unresolved: `users/{userId}.photoUrl` above is documented as "post-moderation," but until this milestone no moderation pipeline existed anywhere in this codebase, and `completeAccountSetup`'s original spec text took a raw client-supplied `photoUrl` string on faith — the two documents disagreed about whether the field was ever actually gated. This subcollection is the fix: one document per upload attempt, written **entirely** by the Storage-triggered moderation Cloud Function (`FIREBASE.md` §2.5, ADR 0006) via the Admin SDK. The client never writes this document directly — it uploads the raw photo to Cloud Storage and listens here for the verdict.
+
+```
+users/{userId}/private/photoModeration/{uploadId}   // PRIVATE — readable only by request.auth.uid == userId;
+                                                      // every field Functions-only-writable, no exceptions (§6)
+├─ status: string                       // enum: "pending" | "approved" | "flagged"
+├─ approvedUrl: string | null           // set only when status == "approved" — the public Cloud Storage download
+│                                       // URL of the *copied*, post-moderation object (see FIREBASE.md §2.5's
+│                                       // pending/ vs. approved/ path convention). completeAccountSetup reads this
+│                                       // field server-side (Admin SDK) and copies it into users/{userId}.photoUrl
+│                                       // — it is never taken as a raw string from the client's request body, per
+│                                       // FIREBASE.md §2.5's "never written directly by the uploading client" rule.
+├─ flagReason: string | null            // set only when status == "flagged" — the SafeSearch category+likelihood
+│                                       // that triggered quarantine (e.g. "adult:VERY_LIKELY"), referenced by the
+│                                       // Trust & Safety review task this same trigger creates (§3.6's Reports model)
+├─ storagePath: string                  // the original uploaded object's path under users/{userId}/profile/pending/,
+│                                       // kept for the review task even after quarantine
+└─ createdAt: timestamp
+```
+
+`uploadId` is a client-generated identifier (e.g. a UUID), used as both the Storage object name under `users/{userId}/profile/pending/{uploadId}` and this document's ID — the moderation trigger derives `userId`/`uploadId` directly from the finalized object's path rather than needing a separate lookup. `completeAccountSetup`'s request contract takes `photoUploadId` (not `photoUrl`) for exactly this reason — see `API_SPEC.md` §3.9's corrected text.
+
 ### 3.2 `tables/{tableId}`
 
 ```
@@ -522,6 +546,16 @@ match /databases/{database}/documents {
         // "reject this create() if the computed age is under 18," but a callable can, and only a callable
         // (Functions-only create) can be trusted to have actually run that check first.
       allow delete: if false;
+    }
+
+    match /private/photoModeration/{uploadId} {
+      // Added Milestone F5, §3.1a above. The owner may READ their own upload's verdict (Profile Setup
+      // listens here to know when to enable "Continue"), but every write comes from the Storage-triggered
+      // moderation Function via the Admin SDK, which bypasses these rules entirely — there is no client
+      // write path to this document at all, matching the "never trust the client for this field" intent
+      // FIREBASE.md §2.5 states and completeAccountSetup (API_SPEC.md §3.9) now actually enforces.
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if false;
     }
   }
 
