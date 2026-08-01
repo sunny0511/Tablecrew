@@ -661,6 +661,25 @@ export const cancelRsvp = onCall<CancelRsvpRequest>(
                 const now = FieldValue.serverTimestamp();
                 const tableUpdates: Record<string, unknown> = {updatedAt: now};
 
+                // Firestore transactions require every read to happen before
+                // any write (tx.get() after tx.delete()/tx.update() throws
+                // "transactions require all reads to be executed before all
+                // writes") — a real bug the founder's first emulator run of
+                // this suite caught: the waitlist-promotion query below used
+                // to run after tx.delete(rsvpRef), which no fake-Firestore
+                // unit test could have modeled, since none of them enforce
+                // Firestore's actual read-before-write transaction ordering.
+                // Fixed by doing this read up front, before any tx.delete/
+                // tx.update call in this transaction.
+                const waitlistQuery = rsvp.status === 'confirmed' ?
+                  await tx.get(
+                      tableRef.collection('rsvps')
+                          .where('status', '==', 'waitlisted')
+                          .orderBy('createdAt', 'asc')
+                          .limit(1),
+                  ) :
+                  null;
+
                 tx.delete(rsvpRef);
 
                 if (rsvp.status === 'confirmed') {
@@ -669,13 +688,7 @@ export const cancelRsvp = onCall<CancelRsvpRequest>(
                   // Promote the earliest waitlisted RSVP into the freed seat,
                   // per docs/API_SPEC.md §3.1's requirement that this happen
                   // here, not only in the scheduled reconciliation sweep.
-                  const waitlistQuery = await tx.get(
-                      tableRef.collection('rsvps')
-                          .where('status', '==', 'waitlisted')
-                          .orderBy('createdAt', 'asc')
-                          .limit(1),
-                  );
-                  if (waitlistQuery.docs[0]) {
+                  if (waitlistQuery?.docs[0]) {
                     const promoted = waitlistQuery.docs[0];
                     tx.update(promoted.ref, {
                       status: 'confirmed',
