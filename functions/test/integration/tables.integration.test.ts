@@ -130,18 +130,26 @@ test('requestSeat: a closed Table always lands in "requested", not auto-confirme
 });
 
 test('requestSeat: a full open Table waitlists the next requester', async () => {
+  // capacity.max can't go below CAPACITY_HARD_FLOOR (2, tables/validation.ts)
+  // — {min: 2, max: 1} is not a legal capacity at all and createTable
+  // correctly rejects it before this test's own logic ever runs (a real
+  // bug in this fixture, caught by the founder's first real emulator run,
+  // not a bug in createTable). Uses max: 2 and a third guest instead.
   const hostUid = 'itest-tbl-full-host';
   const guest1 = 'itest-tbl-full-g1';
   const guest2 = 'itest-tbl-full-g2';
+  const guest3 = 'itest-tbl-full-g3';
   await seedUserProfile(hostUid);
   await seedUserProfile(guest1);
   await seedUserProfile(guest2);
+  await seedUserProfile(guest3);
   const hostToken = await getIdTokenForUid(hostUid, '+911234510007');
   const g1Token = await getIdTokenForUid(guest1, '+911234510008');
   const g2Token = await getIdTokenForUid(guest2, '+911234510009');
+  const g3Token = await getIdTokenForUid(guest3, '+911234510022');
 
   const created = await callCallable<{tableId: string}>(
-      'createTable', baseTablePayload({visibility: 'open', capacity: {min: 2, max: 1}}), hostToken,
+      'createTable', baseTablePayload({visibility: 'open', capacity: {min: 2, max: 2}}), hostToken,
   );
   const tableId = created.body.result!.tableId;
 
@@ -153,41 +161,58 @@ test('requestSeat: a full open Table waitlists the next requester', async () => 
   const second = await callCallable<{rsvpStatus: string}>(
       'requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, g2Token,
   );
-  assert.equal(second.body.result?.rsvpStatus, 'waitlisted');
+  assert.equal(second.body.result?.rsvpStatus, 'confirmed');
+
+  const third = await callCallable<{rsvpStatus: string}>(
+      'requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, g3Token,
+  );
+  assert.equal(third.body.result?.rsvpStatus, 'waitlisted');
 
   const db = getFirestore();
   const tableSnap = await db.doc(`tables/${tableId}`).get();
-  assert.equal(tableSnap.data()!.capacity.confirmedCount, 1);
+  assert.equal(tableSnap.data()!.capacity.confirmedCount, 2);
   assert.equal(tableSnap.data()!.capacity.waitlistCount, 1);
 });
 
 test('confirmAttendee: host confirms a "requested" RSVP; TABLE_FULL once capacity is reached', async () => {
+  // Same capacity-floor fixture fix as above: max: 2, a third guest to
+  // actually exercise TABLE_FULL once the first two are confirmed.
   const hostUid = 'itest-tbl-confirm-host';
   const guest1 = 'itest-tbl-confirm-g1';
   const guest2 = 'itest-tbl-confirm-g2';
+  const guest3 = 'itest-tbl-confirm-g3';
   await seedUserProfile(hostUid);
   await seedUserProfile(guest1);
   await seedUserProfile(guest2);
+  await seedUserProfile(guest3);
   const hostToken = await getIdTokenForUid(hostUid, '+911234510010');
   const g1Token = await getIdTokenForUid(guest1, '+911234510011');
   const g2Token = await getIdTokenForUid(guest2, '+911234510012');
+  const g3Token = await getIdTokenForUid(guest3, '+911234510023');
 
   const created = await callCallable<{tableId: string}>(
-      'createTable', baseTablePayload({visibility: 'closed', capacity: {min: 2, max: 1}}), hostToken,
+      'createTable', baseTablePayload({visibility: 'closed', capacity: {min: 2, max: 2}}), hostToken,
   );
   const tableId = created.body.result!.tableId;
 
   await callCallable('requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, g1Token);
   await callCallable('requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, g2Token);
+  await callCallable('requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, g3Token);
 
-  const confirmed = await callCallable<{success: boolean; newStatus: string}>(
+  const confirmedFirst = await callCallable<{success: boolean; newStatus: string}>(
       'confirmAttendee', {tableId, targetUserId: guest1, idempotencyKey: crypto.randomUUID()}, hostToken,
   );
-  assert.equal(confirmed.status, 200);
-  assert.equal(confirmed.body.result?.newStatus, 'confirmed');
+  assert.equal(confirmedFirst.status, 200);
+  assert.equal(confirmedFirst.body.result?.newStatus, 'confirmed');
+
+  const confirmedSecond = await callCallable<{success: boolean; newStatus: string}>(
+      'confirmAttendee', {tableId, targetUserId: guest2, idempotencyKey: crypto.randomUUID()}, hostToken,
+  );
+  assert.equal(confirmedSecond.status, 200);
+  assert.equal(confirmedSecond.body.result?.newStatus, 'confirmed');
 
   const overCapacity = await callCallable(
-      'confirmAttendee', {tableId, targetUserId: guest2, idempotencyKey: crypto.randomUUID()}, hostToken,
+      'confirmAttendee', {tableId, targetUserId: guest3, idempotencyKey: crypto.randomUUID()}, hostToken,
   );
   assert.equal(overCapacity.status, 400);
   const details = overCapacity.body.error?.details as {code?: string} | undefined;
@@ -195,23 +220,29 @@ test('confirmAttendee: host confirms a "requested" RSVP; TABLE_FULL once capacit
 });
 
 test('cancelRsvp: cancelling a confirmed RSVP promotes the earliest waitlisted RSVP', async () => {
+  // Same capacity-floor fixture fix: max: 2, a third guest to actually
+  // reach the waitlist before cancelling frees a seat.
   const hostUid = 'itest-tbl-promote-host';
   const guest1 = 'itest-tbl-promote-g1';
   const guest2 = 'itest-tbl-promote-g2';
+  const guest3 = 'itest-tbl-promote-g3';
   await seedUserProfile(hostUid);
   await seedUserProfile(guest1);
   await seedUserProfile(guest2);
+  await seedUserProfile(guest3);
   const hostToken = await getIdTokenForUid(hostUid, '+911234510013');
   const g1Token = await getIdTokenForUid(guest1, '+911234510014');
   const g2Token = await getIdTokenForUid(guest2, '+911234510015');
+  const g3Token = await getIdTokenForUid(guest3, '+911234510024');
 
   const created = await callCallable<{tableId: string}>(
-      'createTable', baseTablePayload({visibility: 'open', capacity: {min: 2, max: 1}}), hostToken,
+      'createTable', baseTablePayload({visibility: 'open', capacity: {min: 2, max: 2}}), hostToken,
   );
   const tableId = created.body.result!.tableId;
 
   await callCallable('requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, g1Token); // confirmed
-  await callCallable('requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, g2Token); // waitlisted
+  await callCallable('requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, g2Token); // confirmed
+  await callCallable('requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, g3Token); // waitlisted
 
   const cancelRes = await callCallable(
       'cancelRsvp', {tableId, idempotencyKey: crypto.randomUUID()}, g1Token,
@@ -219,11 +250,11 @@ test('cancelRsvp: cancelling a confirmed RSVP promotes the earliest waitlisted R
   assert.equal(cancelRes.status, 200);
 
   const db = getFirestore();
-  const g2Rsvp = await db.doc(`tables/${tableId}/rsvps/${guest2}`).get();
-  assert.equal(g2Rsvp.data()!.status, 'confirmed');
+  const g3Rsvp = await db.doc(`tables/${tableId}/rsvps/${guest3}`).get();
+  assert.equal(g3Rsvp.data()!.status, 'confirmed');
 
   const tableSnap = await db.doc(`tables/${tableId}`).get();
-  assert.equal(tableSnap.data()!.capacity.confirmedCount, 1);
+  assert.equal(tableSnap.data()!.capacity.confirmedCount, 2);
   assert.equal(tableSnap.data()!.capacity.waitlistCount, 0);
 });
 
