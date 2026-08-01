@@ -170,14 +170,33 @@ service cloud.firestore {
       // callable using the Admin SDK, which validates the creator and sets
       // the initial memberIds/members map — never a direct client-side
       // document create, unlike Tables above.
-      allow update: if isSignedIn() && request.auth.uid in resource.data.memberIds
-                    && !request.resource.data.diff(resource.data)
-                         .affectedKeys().hasAny(['memberIds', 'members', 'tableHistoryCount']);
-      // A member may edit the Crew's own broadly-editable fields (name,
-      // photo, recurrence) directly, but never the membership itself — that
-      // goes through addMember/removeMember (Milestone F4), which does
-      // role/invite validation a rule can't express — or the denormalized
-      // tableHistoryCount, which is trigger-maintained.
+      allow update: if isSignedIn()
+                    && resource.data.members[request.auth.uid].role == 'admin'
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys().hasOnly(['name', 'photoUrl', 'updatedAt']);
+      // Milestone F4 correction: the F1 rule allowed *any* member (not just
+      // an admin) to write directly, and used a denylist
+      // (`hasAny([...memberIds/members/tableHistoryCount])`) rather than an
+      // allowlist — meaning any newly added field (e.g., `recurrence`,
+      // already in docs/DATABASE.md's schema but ungoverned by any callable
+      // until `scheduleRecurringTable` lands in Phase 1) was silently
+      // client-writable by default, and any member — not just an admin —
+      // could rename or re-photo the Crew, contradicting `updateCrew`'s
+      // real implementation (functions/src/crews/index.ts, Milestone F4),
+      // which is admin-only. Both gaps are the same category Milestone F2
+      // found for `users`/`private/profile` and F4 found for `tables`: a
+      // rule that checks *whose* uid is writing without also fully
+      // constraining *what* gets written. Fixed the same way `users`'s
+      // update rule was: (1) admin-only, matching `updateCrew`'s real
+      // permission check exactly — a single map-lookup condition, unlike
+      // Tables' multi-document `CANNOT_EDIT_AFTER_CONFIRMED` invariant, so
+      // narrowing rather than going fully Functions-only is safe and
+      // correctly scoped here; (2) `hasOnly(['name', 'photoUrl',
+      // 'updatedAt'])` — an allowlist, not a denylist, so `recurrence`
+      // (ungoverned until Phase 1) and any future schema field are denied
+      // by default rather than needing to be remembered and added to a
+      // denylist. `updatedAt` is allowed since `updateCrew` itself sets it
+      // on every patch.
       allow delete: if false;
     }
 

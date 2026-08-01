@@ -48,10 +48,27 @@ describe('firestore.rules: crews/{crewId}', () => {
     });
   });
 
+  // Milestone F4 correction: `buildCrewFixture`'s default `members` map
+  // (fixtures.ts) already gives alice `role: "admin"` and bob
+  // `role: "member"` — these tests exercise that admin/member distinction
+  // now that the rule enforces it (previously any member could write
+  // directly; see firestore.rules's inline correction note on this rule).
   describe('update', () => {
-    it('allows a member to update the crew\'s name', async () => {
+    it('allows the admin to update the crew\'s name', async () => {
       const alice = testEnv.authenticatedContext('alice').firestore();
       await assertSucceeds(updateDoc(doc(alice, 'crews/crew-1'), {name: 'Renamed Crew'}));
+    });
+
+    it('allows the admin to update the crew\'s photoUrl', async () => {
+      const alice = testEnv.authenticatedContext('alice').firestore();
+      await assertSucceeds(updateDoc(doc(alice, 'crews/crew-1'), {photoUrl: 'https://example.com/new.jpg'}));
+    });
+
+    it('denies a non-admin member from updating the crew\'s name', async () => {
+      // bob is a member (not admin) per buildCrewFixture's default — matches
+      // updateCrew's real admin-only permission check (functions/src/crews/index.ts).
+      const bob = testEnv.authenticatedContext('bob').firestore();
+      await assertFails(updateDoc(doc(bob, 'crews/crew-1'), {name: 'Bob Renamed This'}));
     });
 
     it('denies a non-member from updating the crew document', async () => {
@@ -59,19 +76,28 @@ describe('firestore.rules: crews/{crewId}', () => {
       await assertFails(updateDoc(doc(carol, 'crews/crew-1'), {name: 'Hijacked'}));
     });
 
-    it('denies a member writing memberIds directly', async () => {
+    it('denies the admin writing memberIds directly', async () => {
       const alice = testEnv.authenticatedContext('alice').firestore();
       await assertFails(updateDoc(doc(alice, 'crews/crew-1'), {memberIds: ['alice', 'bob', 'carol']}));
     });
 
-    it('denies a member writing the members snapshot map directly', async () => {
+    it('denies the admin writing the members snapshot map directly', async () => {
       const alice = testEnv.authenticatedContext('alice').firestore();
       await assertFails(updateDoc(doc(alice, 'crews/crew-1'), {'members.carol': {displayNameSnapshot: 'Carol', photoUrlSnapshot: null, role: 'member', joinedAt: Date.now()}}));
     });
 
-    it('denies a member writing tableHistoryCount directly', async () => {
+    it('denies the admin writing tableHistoryCount directly', async () => {
       const alice = testEnv.authenticatedContext('alice').firestore();
       await assertFails(updateDoc(doc(alice, 'crews/crew-1'), {tableHistoryCount: 99}));
+    });
+
+    it('denies the admin writing recurrence directly', async () => {
+      // recurrence is in docs/DATABASE.md's schema but ungoverned by any
+      // callable until scheduleRecurringTable lands (Phase 1, out of
+      // Milestone F4's scope) — the allowlist rule denies it by default
+      // rather than needing to be remembered as a denylist entry.
+      const alice = testEnv.authenticatedContext('alice').firestore();
+      await assertFails(updateDoc(doc(alice, 'crews/crew-1'), {recurrence: {cadence: 'weekly', dayOfWeek: 'saturday'}}));
     });
   });
 
