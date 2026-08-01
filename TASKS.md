@@ -106,16 +106,31 @@ Founder direction, given right after F4 shipped: Discover — TableCrew's most d
 
 **Build-order note — a real divergence, not a false alignment.** `TASKS.md`'s own founder-confirmed "Build order" list (below) sequences Discover at position 8, *after* Crew management (5) and Notifications (7). The new engineering milestone plan now builds Discover (F7) *before* full Crew management/Chat/Rating and Notifications (F8/F9). These two orderings genuinely diverge as of this correction — see the annotation added directly under the Build order list below for how they're reconciled (product-journey-completeness order vs. engineering-build order, not the same axis, and not required to match).
 
-**New process, starting retroactively at Milestone F4 (founder-directed):** every milestone close now also produces and distributes an internal demo build via Firebase App Distribution — see `docs/DEPLOYMENT.md`'s new "Internal Demo Builds at Milestone Boundaries" section and `docs/IMPLEMENTATION_PLAN.md`'s new Recommendation R8. **F4's catch-up build is the founder's to run now** (I don't have the founder's Flutter/Android toolchain or Firebase login in my sandbox):
+**New process, starting retroactively at Milestone F4 (founder-directed):** every milestone close now also produces and distributes an internal demo build via Firebase App Distribution — see `docs/DEPLOYMENT.md`'s new "Internal Demo Builds at Milestone Boundaries" section and `docs/IMPLEMENTATION_PLAN.md`'s new Recommendation R8.
+
+**Update — 2026-08, real gap found on the first actual attempt.** The founder's first real `flutter build apk --debug` run surfaced two stacked blockers, one of which is more serious than anything previously disclosed about the Flutter toolchain:
+
+1. **`app/android/` and `app/ios/` do not exist anywhere in this repository's history** (`git log --all` on both paths returns nothing). `.gitignore` already has entries anticipating them (`app/android/.gradle/`, `app/ios/Pods/`, etc.), meaning they were always *intended* to exist — this is a real, previously-undetected Milestone F0 scaffold gap, not a new regression. Root cause, consistent with everything else disclosed about F0: no real Flutter SDK was available in any environment used to build this repository until Milestone F3, so F0's Flutter app scaffold was hand-authored to mimic `flutter create`'s output for `lib/`/`pubspec.yaml`/`test/` — which is reproducible by hand — but the native Android/iOS project wrappers (`android/`, `ios/`) are generated, machine-specific boilerplate that hand-authoring never attempted. Every prior "flutter build is unverified" disclosure (F0 through F4) was accurate but understated the actual cause — it's not just unverified, the build literally cannot succeed yet regardless of toolchain, because the native platform folders were never generated at all. **Fix:** from `app/`, run `flutter create --platforms=android,ios .` — safe on an existing project, it only fills in the missing platform directories and does not touch `lib/`, `pubspec.yaml`, or any existing Dart source.
+2. **No Android SDK installed** (`[!] No Android SDK found. Try setting the ANDROID_HOME environment variable.`) — a second, independent blocker, unrelated to (1). Easiest fix: install Android Studio (https://developer.android.com/studio), open it once and let the SDK Component Setup wizard finish (auto-sets `ANDROID_HOME`). CLI-only alternative: `brew install --cask android-commandlinetools`, then add `ANDROID_HOME`/`PATH` exports to `~/.zshrc` and run `sdkmanager --licenses` plus `sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"`.
+
+Also: `firebase_core` is already a `pubspec.yaml` dependency, but no `lib/firebase_options.dart` exists and no code calls `Firebase.initializeApp()` yet — the Flutter client has never actually been wired to Firebase at all (expected; F3 was theme/router/state skeleton only, no real Firebase calls). The `<ANDROID_FIREBASE_APP_ID>` in my first command below was a **placeholder, not literal shell syntax** — running it as-is caused zsh to try to interpret `<...>` as input redirection, which is on me for not flagging clearly enough. `flutterfire configure --project=tablecrew-dev` (from `app/`, after `dart pub global activate flutterfire_cli` if not already installed) resolves this properly: it registers Android/iOS apps in the `tablecrew-dev` Firebase project if they don't exist yet, drops `google-services.json`/`GoogleService-Info.plist` into the right native folders, and generates `lib/firebase_options.dart` — solving the "where do I even get the App ID" problem instead of hunting for it manually.
+
+**Corrected, ordered fix, once picked back up:**
 
 ```
 cd app
+flutter create --platforms=android,ios .
+# install Android Studio, or brew install --cask android-commandlinetools + sdkmanager licenses/packages
+flutter doctor                              # confirm Android toolchain now shows a checkmark
+dart pub global activate flutterfire_cli    # if not already installed
+flutterfire configure --project=tablecrew-dev
 flutter build apk --debug
 firebase appdistribution:distribute build/app/outputs/flutter-apk/app-debug.apk \
-  --app <ANDROID_FIREBASE_APP_ID> --groups internal-testers --project tablecrew-dev
+  --app <the real App ID flutterfire configure just printed/wrote> \
+  --groups internal-testers --project tablecrew-dev
 ```
 
-(Registering the `internal-testers` group in the `tablecrew-dev` Firebase console's App Distribution page first, if it doesn't already exist.) **Disclose to whoever receives this build:** F4 was backend-only (Cloud Functions callables, no client UI) — this build will look and behave identically to F3's, which is expected, not a sign anything broke. iOS demo builds are blocked pending Apple Developer Program enrollment and Fastlane signing setup, neither of which exist yet — a new, disclosed open item (no engineering decision needed, just the founder enrolling the account), not silently skipped.
+(Registering the `internal-testers` group in the `tablecrew-dev` Firebase console's App Distribution page first, if it doesn't already exist.) **Disclose to whoever receives this build:** F4 was backend-only (Cloud Functions callables, no client UI) — this build will look and behave identically to F3's, which is expected, not a sign anything broke. iOS demo builds remain additionally blocked pending Apple Developer Program enrollment and Fastlane signing setup, neither of which exist yet.
 
 ## Update — 2026-08 Pre-implementation verification and Foundation implementation plan completed
 
