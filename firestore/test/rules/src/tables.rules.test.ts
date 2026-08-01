@@ -55,10 +55,21 @@ describe('firestore.rules: tables/{tableId} and rsvps subcollection', () => {
     });
   });
 
+  // Milestone F4 correction: tables/{tableId}'s create/update both went
+  // fully Functions-only (firestore.rules, commit `c0cb3f7`) — the F1 rule
+  // this describe block originally tested allowed a signed-in host to
+  // create()/update() directly, checking only *whose* uid was writing, not
+  // *what* got written (see firestore.rules's inline correction note on
+  // this rule for the full reasoning: it let a client bypass createTable's
+  // idempotency/rate-limit/host-snapshotting and write `status` directly,
+  // among other gaps). The two tests below were still asserting the old,
+  // now-incorrect behavior until a real emulator run caught it — same
+  // "run it for real, don't just hand-review" lesson every prior milestone
+  // has surfaced at least once.
   describe('create', () => {
-    it('allows a signed-in user to create a table they host', async () => {
+    it('denies a signed-in user creating a table directly, even one they\'d host (Functions-only: createTable)', async () => {
       const alice = testEnv.authenticatedContext('alice').firestore();
-      await assertSucceeds(setDoc(doc(alice, 'tables/new-table'), buildTableFixture({hostId: 'alice'})));
+      await assertFails(setDoc(doc(alice, 'tables/new-table'), buildTableFixture({hostId: 'alice'})));
     });
 
     it('denies a user creating a table hosted by someone else', async () => {
@@ -68,9 +79,9 @@ describe('firestore.rules: tables/{tableId} and rsvps subcollection', () => {
   });
 
   describe('update', () => {
-    it('allows the host to update a benign field', async () => {
+    it('denies the host updating even a benign field directly (Functions-only: updateTable)', async () => {
       const alice = testEnv.authenticatedContext('alice').firestore();
-      await assertSucceeds(updateDoc(doc(alice, 'tables/closed-table'), {title: 'New Title'}));
+      await assertFails(updateDoc(doc(alice, 'tables/closed-table'), {title: 'New Title'}));
     });
 
     it('denies a non-host from updating the table', async () => {
