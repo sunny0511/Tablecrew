@@ -67,6 +67,13 @@ buildrunner-output.txt
 analyze-output.txt
 pub-add-output*.txt
 format-output.txt
+# Generalized (2026-08, F3 golden-test work): the exact-filename list above
+# kept growing one command at a time (test-output.txt, golden-generate-
+# output.txt, ...); a single glob covers this whole ad hoc pattern instead
+# of needing another entry added per new command. The named entries above
+# are kept since removing them would be a no-op churn, not a fix.
+*-output.txt
+*-output-*.txt
 
 # Firebase
 .firebase/
