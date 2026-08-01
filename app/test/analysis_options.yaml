@@ -7,3 +7,11 @@ include: package:very_good_analysis/analysis_options.yaml
 linter:
   rules:
     public_member_api_docs: false
+    # Milestone F3: Alchemist's `goldenTest()` returns a Future (its
+    # internal `test()`/`testWidgets()` registration), but every official
+    # Alchemist example - and this package's own golden tests - call it
+    # synchronously inside a non-async `group()` body, the same way plain
+    # `test()`/`testWidgets()` calls are never awaited either. Disabled
+    # here rather than wrapping every call in `unawaited()`, which would
+    # just be noise around an idiomatic, intentional pattern.
+    discarded_futures: false

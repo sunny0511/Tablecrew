@@ -30,6 +30,17 @@ app/coverage/
 app/lib/**/*.g.dart
 app/test/**/*.g.dart
 
+# Alchemist golden tests (Milestone F3, Recommendation R2). Per Alchemist's
+# own Recommended Setup Guide: platform ("readable") golden PNGs are
+# inherently unstable across machines/OSes (font rendering differs between
+# macOS/Linux/Windows), so only the Ahem-font "ci/" goldens - which are
+# platform-agnostic by construction - are committed as the real regression
+# reference. Platform goldens and any failure-diff images stay local, for a
+# developer's own visual debugging.
+app/test/**/goldens/**/*.*
+app/test/**/failures/**/*.*
+!app/test/**/goldens/ci/*.*
+
 # Node / Cloud Functions (functions/)
 functions/node_modules/
 functions/lib/

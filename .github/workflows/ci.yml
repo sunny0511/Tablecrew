@@ -112,7 +112,13 @@ jobs:
         run: dart run build_runner build
       - name: Run unit + widget tests
         working-directory: app
-        run: flutter test --coverage
+        # --dart-define=CI=true is read by test/flutter_test_config.dart to
+        # disable Alchemist's platform ("readable") golden tests here -
+        # those are inherently unstable across host OSes (font rendering),
+        # so only the Ahem-font, platform-agnostic "ci/" goldens run on
+        # this runner. See Recommendation R2 / .gitignore's golden-file
+        # comment for the full rationale.
+        run: flutter test --coverage --dart-define=CI=true
 
   # --- Stage 3: Firestore rules tests ----------------------------------------
 

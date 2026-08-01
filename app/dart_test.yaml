@@ -1,0 +1,15 @@
+# Declares Alchemist's "golden" tag (applied automatically to every
+# goldenTest(), per its own README) so `flutter test --tags golden` /
+# `--exclude-tags golden` work without the "tag was used that wasn't
+# specified in dart_test.yaml" warning `flutter test` otherwise prints.
+#
+# Must live at the package root, next to pubspec.yaml — not inside test/ —
+# per package:test's own configuration doc
+# (https://github.com/dart-lang/test/blob/master/pkgs/test/doc/configuration.md#tags):
+# "The file is named dart_test.yaml and lives at the root of the package,
+# next to the package's pubspec." A first attempt placed this at
+# app/test/dart_test.yaml, which package:test silently never loads — the
+# warning it was meant to fix kept appearing, caught by a real
+# `flutter test` re-run rather than assumed fixed.
+tags:
+  golden:
