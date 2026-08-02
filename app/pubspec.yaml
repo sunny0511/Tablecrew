@@ -67,6 +67,16 @@ dependencies:
   uuid: 4.6.0
   connectivity_plus: 7.3.1
   shared_preferences: 2.5.5
+  # Firestore/Functions/Storage clients for
+  # app/lib/data/user_profile_repository.dart and photo_upload_repository.dart
+  # (Milestone F5). Added via `flutter pub add` (real resolver) then
+  # re-pinned from the default caret ranges to exact versions, matching
+  # every other dependency in this file per Recommendation R5.
+  cloud_firestore: 6.7.1
+  cloud_functions: 6.3.5
+  firebase_storage: 13.4.5
+  intl_phone_field: ^3.2.0
+  pinput: ^6.0.2
 
 dev_dependencies:
   flutter_test:
@@ -93,16 +103,14 @@ dev_dependencies:
   # Recommendation R5's "pin exact versions" policy.
   alchemist: 0.14.0
 
-# Milestone F0 note, resolved Milestone F2/F3: this section used to list
+# Milestone F0 note, resolved Milestone F2/F3/F5: this section used to list
 # which Firebase Flutter plugins were deliberately not yet pinned pending
-# real `pub get` access. firebase_core/firebase_auth landed F2; the
-# remaining ones (cloud_firestore, cloud_functions, firebase_storage,
-# firebase_messaging, firebase_app_check, firebase_crashlytics,
-# firebase_analytics — all named in docs/FIREBASE.md/docs/ARCHITECTURE.md)
-# are still not pinned, and still deliberately so: each lands in the
-# milestone that first needs it (F4+), verified via a real `flutter pub get`
-# at that time rather than guessed now, per the same lesson this milestone
-# just re-learned about guessing versions without a real resolver.
+# real `pub get` access. firebase_core/firebase_auth landed F2;
+# cloud_firestore/cloud_functions/firebase_storage landed F5 (see their
+# entries above). Still deliberately not yet pinned: firebase_messaging,
+# firebase_app_check, firebase_crashlytics, firebase_analytics, and
+# image_picker (Screen 5's photo picker) — each lands in the milestone that
+# first needs it.
 
 flutter:
   uses-material-design: true

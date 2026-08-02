@@ -8,6 +8,17 @@ analyzer:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
     - "lib/l10n/**"
+    # Milestone F5: `flutter build apk`'s iOS Swift Package Manager prep step
+    # (a Flutter tooling quirk that runs even for Android-only builds) copies
+    # each Firebase plugin's full source — including its own test/ and
+    # example/ directories, which are written against *that plugin's*
+    # dependencies, not this app's — into build/ios/SourcePackages/. Without
+    # this exclude, `flutter analyze` walks that vendored copy as if it were
+    # project code and reports ~1500 issues that have nothing to do with
+    # TableCrew. build/ is gitignored and regenerated per machine, so
+    # excluding it here is just telling the analyzer to stay inside the
+    # actual project the same way git already does.
+    - "build/**"
 
 linter:
   rules:
@@ -17,3 +28,11 @@ linter:
     # makes doc comments on public classes/functions a stated requirement,
     # not just a lint nicety.
     public_member_api_docs: true
+    # pubspec.yaml deliberately groups dependencies by feature/milestone with
+    # explanatory comments (see that file) rather than alphabetically — that
+    # grouping is itself documentation of *why* each dependency was added,
+    # which alphabetizing would destroy. Disabling the default
+    # sort_pub_dependencies rule here is resolving a real conflict between a
+    # generic lint default and this project's own documented pubspec
+    # convention, not ignoring a legitimate finding.
+    sort_pub_dependencies: false
