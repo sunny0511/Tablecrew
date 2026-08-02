@@ -6,16 +6,29 @@ import 'package:go_router/go_router.dart';
 /// assert arrival via `find.text('route:$name')` without pulling in that
 /// destination screen's real widget tree (and its own plugin/provider
 /// requirements, which this test's `ProviderScope` overrides don't set up).
+///
+/// If the destination was reached with a non-empty query string, it's
+/// appended after a `?` (e.g. `route:report?targetType=user&targetId=bob`)
+/// so a test can assert exactly which query parameters a screen navigated
+/// with — a destination reached with no query string renders unchanged
+/// (`route:$name`, no trailing `?`), so this is backward compatible with
+/// every existing `find.text('route:$name')` assertion.
 class RouteMarker extends StatelessWidget {
-  /// Creates a marker screen for the named route [name].
-  const RouteMarker(this.name, {super.key});
+  /// Creates a marker screen for the named route [name], with the
+  /// optional [query] string it was reached with.
+  const RouteMarker(this.name, {this.query = '', super.key});
 
   /// The GoRouter route name this marker stands in for.
   final String name;
 
+  /// The reaching route's query string (`GoRouterState.uri.query`), or
+  /// empty if none.
+  final String query;
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(body: Center(child: Text('route:$name')));
+    final label = query.isEmpty ? 'route:$name' : 'route:$name?$query';
+    return Scaffold(body: Center(child: Text(label)));
   }
 }
 
@@ -45,7 +58,8 @@ GoRouter buildTestRouter({
         GoRoute(
           path: entry.value,
           name: entry.key,
-          builder: (context, state) => RouteMarker(entry.key),
+          builder: (context, state) =>
+              RouteMarker(entry.key, query: state.uri.query),
         ),
     ],
   );

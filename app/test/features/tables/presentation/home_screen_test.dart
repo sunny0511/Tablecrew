@@ -134,7 +134,11 @@ void main() {
     await tester.tap(find.text('Schedule a Table'));
     await tester.pumpAndSettle();
 
-    expect(find.text('route:create-table'), findsOneWidget);
+    // Carries the Crew's id as a query param so Create Table can pre-fill
+    // it — this assertion only became checkable once `RouteMarker` started
+    // surfacing the query string it was reached with (Milestone F6 Trust &
+    // Safety client chunk); the app's own routing call already did this.
+    expect(find.text('route:create-table?crewId=c1'), findsOneWidget);
   });
 
   testWidgets('tapping a Table card routes to its Table Detail', (

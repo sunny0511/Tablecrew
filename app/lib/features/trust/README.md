@@ -1,11 +1,13 @@
 # features/trust/
 
-Screens 27-29 (Report Flow, Block Confirmation, Trusted Contact Setup) per `docs/SCREEN_SPECIFICATIONS.md` — live from day one per `docs/ROADMAP.md`'s explicit rationale that this infrastructure must be pressure-tested on lower-stakes Crew disputes before Discover raises the stakes (see also Recommendation R6). Backed by `docs/API_SPEC.md` §3.4's `reportUser`/`reportTable`/`blockUser`/`triggerDuressSignal`/`createLocationShare`/`revokeLocationShare` (Milestone F4+ Cloud Functions deliverables, not yet built).
+Screens 27-28 (Report Flow, Block Confirmation) per `docs/SCREEN_SPECIFICATIONS.md` — real as of Milestone F6's Trust & Safety client chunk, backed by `functions/src/trust/index.ts`'s `reportUser`/`reportTable`/`blockUser` callables (the same milestone's backend chunk). Screen 29 (Trusted Contact Setup) and its backing `createLocationShare`/`revokeLocationShare` endpoints remain deliberately deferred — see `functions/src/trust/index.ts`'s header and `TASKS.md`'s Milestone F6 fourth-chunk entry for the two real, disclosed reasons (a request-contract gap in `revokeLocationShare` and an undecided SMS vendor for `createLocationShare`'s `external_sms` path).
 
-Per `docs/ENGINEERING_GUIDELINES.md`'s feature-folder convention (see `features/README.md`), this will hold:
+Per `docs/ENGINEERING_GUIDELINES.md`'s feature-folder convention (see `features/README.md`):
 
-- `presentation/` — the 3 screen widgets. Per `docs/SECURITY.md` and the Live Table Screen's own requirements, anything duress-related that renders here must never be the slow path — see `docs/WIREFRAMES.md`'s note that the duress control "must render before data loads and can never move behind a menu."
-- `application/` — Riverpod providers/notifiers for report submission, block state, and per-Table location-share creation/revocation.
-- References into `app/lib/data/` for the trust/safety repository, once it and the relevant callables both exist.
+- `presentation/` — `report_flow_screen.dart`, `block_confirmation_screen.dart`. Both are routed `GoRoute` pages (`core/routing/app_router.dart`'s `report`/`block` routes), reached via plain query parameters rather than a path segment, since the target can be a user uid or a Table id and there's no one dynamic resource this pair always nests under.
+- `application/` — `report_flow_controller.dart`, `block_confirmation_controller.dart`. Both plain `@riverpod` (autoDispose), not `keepAlive`: neither screen's Offline Behavior queues-and-retries (both are "blocked entirely offline" per their own specs), so there's no background retry to keep alive across navigation.
+- `app/lib/data/trust_repository.dart` — the repository these controllers call, over the Cloud Functions callables above.
 
-**Milestone F3 note:** this directory is a named, empty shell — routes for all 3 screens already exist in `core/routing/app_router.dart`, but no real screen or provider code lands here until whichever Milestone F6/F7 vertical slice needs it, per `docs/IMPLEMENTATION_PLAN.md` and Recommendation R6's "sequence Trust & Safety alongside the core loop, not after it."
+Reachable today from Table Detail's attendee-row overflow menu (`features/tables/presentation/table_detail_screen.dart`'s `_AttendeeRow`), hidden on the current user's own row. Other entry points `docs/SCREEN_SPECIFICATIONS.md` names (Discover Table Preview, Crew Detail's roster, Crew Chat, the Live Table Screen's roster) don't have a built screen to reach it from yet — Discover is Milestone F7, Crew Detail/Chat and the Live Table Screen are F8 — and should wire the same `report`/`block` routes once they exist, rather than duplicating the flow.
+
+**Per `docs/ENGINEERING_GUIDELINES.md`'s Pull Request Review Process, any PR touching this directory or the Discover/reporting/blocking path requires two approvals, at least one from an engineer who has previously worked on this surface.**
