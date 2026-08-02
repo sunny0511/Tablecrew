@@ -70,7 +70,11 @@ void main() {
       initialPath: '/tables/$tableId',
       initialName: 'table-detail',
       initialScreen: const TableDetailScreen(tableId: tableId),
-      destinations: const {'invite': '/tables/:tableId/invite'},
+      destinations: const {
+        'invite': '/tables/:tableId/invite',
+        'report': '/report',
+        'block': '/block',
+      },
     );
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -131,6 +135,87 @@ void main() {
     await settle(tester);
 
     expect(fakeMutations.confirmAttendeeCalls.single.targetUserId, 'bob');
+  });
+
+  testWidgets(
+      'attendee row overflow: Report routes to Screen 27 with the '
+      'attendee as a user target', (tester) async {
+    fakeTables.tablesById[tableId] =
+        buildTestTableSummary(id: tableId, hostId: 'me', startTime: farFuture);
+    fakeTables.attendeesByTableId[tableId] = const [
+      AttendeeSummary(
+        uid: 'bob',
+        displayName: 'Bob',
+        status: RsvpStatus.confirmed,
+      ),
+    ];
+    await pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('More actions for Bob'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Report'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'route:report?targetType=user&targetId=bob&targetDisplayName=Bob',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      "attendee row overflow: Block routes to Screen 28 with the Table's "
+      'crewId reflected as sharesCrew', (tester) async {
+    fakeTables.tablesById[tableId] = buildTestTableSummary(
+      id: tableId,
+      hostId: 'me',
+      startTime: farFuture,
+      crewId: 'crew-1',
+    );
+    fakeTables.attendeesByTableId[tableId] = const [
+      AttendeeSummary(
+        uid: 'bob',
+        displayName: 'Bob',
+        status: RsvpStatus.confirmed,
+      ),
+    ];
+    await pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('More actions for Bob'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Block'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'route:block?targetUserId=bob&targetDisplayName=Bob&sharesCrew=true',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets("attendee row overflow is hidden on the current user's own row", (
+    tester,
+  ) async {
+    fakeTables.tablesById[tableId] =
+        buildTestTableSummary(id: tableId, hostId: 'me', startTime: farFuture);
+    fakeTables.attendeesByTableId[tableId] = const [
+      AttendeeSummary(
+        uid: 'me',
+        displayName: 'Me',
+        status: RsvpStatus.confirmed,
+      ),
+      AttendeeSummary(
+        uid: 'bob',
+        displayName: 'Bob',
+        status: RsvpStatus.confirmed,
+      ),
+    ];
+    await pumpScreen(tester);
+
+    expect(find.byTooltip('More actions for Me'), findsNothing);
+    expect(find.byTooltip('More actions for Bob'), findsOneWidget);
   });
 
   testWidgets('host overflow: Invite more people routes to Invite & Share', (

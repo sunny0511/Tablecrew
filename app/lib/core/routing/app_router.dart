@@ -12,6 +12,8 @@ import 'package:tablecrew/features/tables/presentation/create_table_screen.dart'
 import 'package:tablecrew/features/tables/presentation/home_screen.dart';
 import 'package:tablecrew/features/tables/presentation/invite_share_screen.dart';
 import 'package:tablecrew/features/tables/presentation/table_detail_screen.dart';
+import 'package:tablecrew/features/trust/presentation/block_confirmation_screen.dart';
+import 'package:tablecrew/features/trust/presentation/report_flow_screen.dart';
 
 /// TableCrew's GoRouter route table — Milestone F3 ("Client foundation")
 /// deliverable per `docs/IMPLEMENTATION_PLAN.md`.
@@ -169,8 +171,39 @@ final GoRouter appRouter = GoRouter(
         _stubRoute('chat', name: 'crew-chat', title: 'Crew Chat'),
       ],
     ),
-    _stubRoute(AppRoutes.report, name: 'report', title: 'Report Flow'),
-    _stubRoute(AppRoutes.block, name: 'block', title: 'Block Confirmation'),
+    // Milestone F6: real Report Flow + Block Confirmation screens,
+    // replacing their F3 stubs. Both read plain query parameters rather
+    // than a path segment — unlike `tableDetail`'s `:tableId`, there's no
+    // one dynamic resource this pair of screens always nests under (the
+    // target can be a user uid or a Table id), so query params carry the
+    // target reference the same way `createTable`'s optional `crewId`
+    // does above.
+    GoRoute(
+      path: AppRoutes.report,
+      name: 'report',
+      pageBuilder: (context, state) => _screenPage(
+        ReportFlowScreen(
+          targetType: state.uri.queryParameters['targetType'] ?? 'user',
+          targetId: state.uri.queryParameters['targetId'] ?? '',
+          targetDisplayName:
+              state.uri.queryParameters['targetDisplayName'] ?? 'this person',
+        ),
+        state,
+      ),
+    ),
+    GoRoute(
+      path: AppRoutes.block,
+      name: 'block',
+      pageBuilder: (context, state) => _screenPage(
+        BlockConfirmationScreen(
+          targetUserId: state.uri.queryParameters['targetUserId'] ?? '',
+          targetDisplayName:
+              state.uri.queryParameters['targetDisplayName'] ?? 'this person',
+          sharesCrew: state.uri.queryParameters['sharesCrew'] == 'true',
+        ),
+        state,
+      ),
+    ),
     _stubRoute(
       AppRoutes.trustedContact,
       name: 'trusted-contact',
