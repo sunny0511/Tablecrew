@@ -181,7 +181,11 @@ export const completeAccountSetup = onCall<CompleteAccountSetupRequest>(
       let photoUrl: string | null = null;
       if (typeof photoUploadId === 'string') {
         const moderationDoc = await db
-            .doc(`users/${uid}/private/photoModeration/${photoUploadId}`)
+            // Task #97 correction: was `users/{uid}/private/photoModeration/
+            // {uploadId}` — an invalid 5-segment document path Firestore's
+            // `.doc()` rejects at runtime. See functions/src/media/index.ts's
+            // matching correction comment for the full story.
+            .doc(`users/${uid}/photoModeration/${photoUploadId}`)
             .get();
         const moderationData = moderationDoc.data();
         if (

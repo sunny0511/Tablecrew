@@ -2,11 +2,17 @@ import {after, before, beforeEach, describe, it} from 'node:test';
 import {assertFails, assertSucceeds, RulesTestEnvironment} from '@firebase/rules-unit-testing';
 import {deleteDoc, doc, getDoc, setDoc, updateDoc} from 'firebase/firestore';
 import {getTestEnv, teardownTestEnv} from './testEnv';
-import {buildUserPrivateProfileFixture, buildUserPublicFixture} from './fixtures';
+import {
+  buildPhotoModerationFixture,
+  buildUserPrivateProfileFixture,
+  buildUserPublicFixture,
+} from './fixtures';
 
-// Covers docs/DATABASE.md §3.1 / §6: users/{userId} (public) and
-// users/{userId}/private/profile (owner-only), per docs/TESTING.md's
-// "100% of rules paths, positive and negative case" requirement.
+// Covers docs/DATABASE.md §3.1 / §3.1a / §6: users/{userId} (public),
+// users/{userId}/private/profile (owner-only), and
+// users/{userId}/photoModeration/{uploadId} (owner-read, Functions-only
+// write - Milestone F5 task #97), per docs/TESTING.md's "100% of rules
+// paths, positive and negative case" requirement.
 describe('firestore.rules: users/{userId} and private/profile', () => {
   let testEnv: RulesTestEnvironment;
 
@@ -24,6 +30,7 @@ describe('firestore.rules: users/{userId} and private/profile', () => {
       const db = context.firestore();
       await setDoc(doc(db, 'users/alice'), buildUserPublicFixture());
       await setDoc(doc(db, 'users/alice/private/profile'), buildUserPrivateProfileFixture());
+      await setDoc(doc(db, 'users/alice/photoModeration/upload-1'), buildPhotoModerationFixture());
     });
   });
 
@@ -175,6 +182,63 @@ describe('firestore.rules: users/{userId} and private/profile', () => {
     it('denies the owner deleting their own private profile directly', async () => {
       const alice = testEnv.authenticatedContext('alice').firestore();
       await assertFails(deleteDoc(doc(alice, 'users/alice/private/profile')));
+    });
+  });
+
+  // Milestone F5 task #97, docs/DATABASE.md §3.1a: the moderation-verdict
+  // document Screen 5 (Profile Setup) listens to. Owner-read only; every
+  // write is Functions/Admin-SDK-only - a client that could write its own
+  // verdict could self-approve a photo the SafeSearch check flagged.
+  describe('photoModeration: read', () => {
+    it('allows the owner to read their own upload\'s moderation verdict', async () => {
+      const alice = testEnv.authenticatedContext('alice').firestore();
+      await assertSucceeds(getDoc(doc(alice, 'users/alice/photoModeration/upload-1')));
+    });
+
+    it('denies another user reading someone else\'s moderation verdict', async () => {
+      const bob = testEnv.authenticatedContext('bob').firestore();
+      await assertFails(getDoc(doc(bob, 'users/alice/photoModeration/upload-1')));
+    });
+
+    it('denies an unauthenticated user reading a moderation verdict', async () => {
+      const anon = testEnv.unauthenticatedContext().firestore();
+      await assertFails(getDoc(doc(anon, 'users/alice/photoModeration/upload-1')));
+    });
+  });
+
+  describe('photoModeration: write', () => {
+    it('denies the owner creating a moderation verdict for their own upload', async () => {
+      const alice = testEnv.authenticatedContext('alice').firestore();
+      await assertFails(setDoc(
+          doc(alice, 'users/alice/photoModeration/upload-2'),
+          buildPhotoModerationFixture(),
+      ));
+    });
+
+    it('denies the owner self-approving a flagged upload', async () => {
+      // The exact escalation the write: false rule exists to block - first
+      // seed a genuinely flagged verdict via the rules bypass, then attempt
+      // the owner flipping it to approved.
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await setDoc(
+            doc(context.firestore(), 'users/alice/photoModeration/upload-3'),
+            buildPhotoModerationFixture({
+              status: 'flagged',
+              approvedUrl: null,
+              flagReason: 'adult:VERY_LIKELY',
+            }),
+        );
+      });
+      const alice = testEnv.authenticatedContext('alice').firestore();
+      await assertFails(updateDoc(doc(alice, 'users/alice/photoModeration/upload-3'), {
+        status: 'approved',
+        approvedUrl: 'https://example.com/self-approved.jpg',
+      }));
+    });
+
+    it('denies the owner deleting their own moderation verdict', async () => {
+      const alice = testEnv.authenticatedContext('alice').firestore();
+      await assertFails(deleteDoc(doc(alice, 'users/alice/photoModeration/upload-1')));
     });
   });
 });

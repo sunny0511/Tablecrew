@@ -101,6 +101,22 @@ service cloud.firestore {
         // verified Stripe webhook, never a client write.
         allow delete: if false;
       }
+
+      match /photoModeration/{uploadId} {
+        // Milestone F5 task #97 (docs/DATABASE.md §3.1a — path corrected
+        // in the same task; see that section's correction note). The owner
+        // may READ their own upload's moderation verdict — Screen 5
+        // (Profile Setup) listens here to know when to enable "Continue" —
+        // but every write comes from the Storage-triggered moderation
+        // Function (functions/src/media/) or completeAccountSetup's
+        // server-side lookup, both via the Admin SDK, which bypasses these
+        // rules entirely. There is no client write path to this document
+        // at all: a client that could write its own verdict could
+        // self-approve a photo the SafeSearch check flagged, defeating the
+        // moderation gate outright.
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow write: if false;
+      }
     }
 
     // --- tables/{tableId} (+ rsvps subcollection) --- docs/DATABASE.md §3.2/§3.3

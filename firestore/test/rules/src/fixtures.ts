@@ -149,6 +149,30 @@ export function buildUserPrivateProfileFixture(
   };
 }
 
+export interface PhotoModerationFixture {
+  status: 'pending' | 'approved' | 'flagged';
+  approvedUrl: string | null;
+  flagReason: string | null;
+  storagePath: string;
+  createdAt: number;
+}
+
+/** docs/DATABASE.md §3.1a - users/{userId}/photoModeration/{uploadId}
+ * (Milestone F5, path corrected in task #97 - see that section's
+ * correction note). */
+export function buildPhotoModerationFixture(
+    overrides: Partial<PhotoModerationFixture> = {},
+): PhotoModerationFixture {
+  return {
+    status: 'approved',
+    approvedUrl: 'https://firebasestorage.googleapis.com/v0/b/test/o/approved%2Fupload-1?alt=media&token=t',
+    flagReason: null,
+    storagePath: 'users/alice/profile/pending/upload-1',
+    createdAt: Date.now(),
+    ...overrides,
+  };
+}
+
 export interface TableFixture {
   hostId: string;
   hostDisplayNameSnapshot: string;

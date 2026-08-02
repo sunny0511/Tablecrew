@@ -50,7 +50,7 @@ class CompleteAccountSetupResult {
 }
 
 /// The moderation verdict for a single photo upload attempt
-/// (`users/{uid}/private/photoModeration/{uploadId}`, docs/DATABASE.md
+/// (`users/{uid}/photoModeration/{uploadId}`, docs/DATABASE.md
 /// §3.1a). A sealed class rather than a bare enum since the `approved`
 /// case carries the resulting download URL.
 sealed class PhotoModerationStatus {
@@ -120,7 +120,7 @@ abstract interface class UserProfileRepository {
   /// docs/API_SPEC.md §3.9 — the combined write backing Screens 5 and 6
   /// (Profile Setup, Interest Selection). [photoUploadId], if given, must
   /// reference an already-`"approved"`
-  /// `users/{uid}/private/photoModeration/{uploadId}` document
+  /// `users/{uid}/photoModeration/{uploadId}` document
   /// (docs/DATABASE.md §3.1a) — the server re-derives the actual photo URL
   /// itself and throws `PHOTO_NOT_APPROVED` otherwise. This method never
   /// takes or sends a raw photo URL string, matching that corrected
@@ -135,7 +135,7 @@ abstract interface class UserProfileRepository {
   });
 
   /// Listens to a photo upload's moderation verdict
-  /// (`users/{uid}/private/photoModeration/{uploadId}`, docs/DATABASE.md
+  /// (`users/{uid}/photoModeration/{uploadId}`, docs/DATABASE.md
   /// §3.1a) — Screen 5's "Continue" button watches this to know when a
   /// clean verdict lands, per its corrected Loading States
   /// (docs/SCREEN_SPECIFICATIONS.md Screen 5). Firestore rules restrict
@@ -214,8 +214,15 @@ class FirebaseUserProfileRepository implements UserProfileRepository {
     required String uid,
     required String uploadId,
   }) {
+    // Task #97 correction: was 'users/$uid/private/photoModeration/
+    // $uploadId' — 5 path segments, which Firestore's .doc() rejects at
+    // runtime (document paths must have an even segment count). Never
+    // caught by any Flutter test since every test drives the hand-written
+    // fake, not this real implementation; found while writing the path's
+    // rules-emulator tests. See functions/src/media/index.ts's matching
+    // correction comment.
     return _firestore
-        .doc('users/$uid/private/photoModeration/$uploadId')
+        .doc('users/$uid/photoModeration/$uploadId')
         .snapshots()
         .map(_toModerationStatus);
   }

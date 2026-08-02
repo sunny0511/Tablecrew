@@ -75,7 +75,18 @@ export const moderateUploadedPhoto = onObjectFinalized(
       const bucket = getStorage().bucket(bucketName);
       const pendingFile = bucket.file(filePath);
       const db = getFirestore();
-      const moderationRef = db.doc(`users/${userId}/private/photoModeration/${uploadId}`);
+      // Task #97 correction: this path was originally written (and
+      // documented, docs/DATABASE.md §3.1a) as
+      // `users/{uid}/private/photoModeration/{uploadId}` — 5 segments,
+      // which Firestore rejects outright as a document path (documents
+      // always sit at an even segment count; 5 segments is a collection
+      // path). Caught while writing this path's rules-emulator tests; the
+      // Admin SDK's `.doc()` throws on it, so this trigger would have
+      // failed on its very first real invocation. Now a direct
+      // subcollection of the user document — owner-only readable via
+      // firestore.rules exactly as before, since that privacy was always
+      // enforced by rules, not by the `private/` name.
+      const moderationRef = db.doc(`users/${userId}/photoModeration/${uploadId}`);
 
       // Record the attempt as "pending" immediately, before the
       // (network-bound) Vision call — so a client listening on this

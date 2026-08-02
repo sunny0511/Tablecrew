@@ -139,13 +139,15 @@ Note: raw phone numbers live only in Firebase Auth (which is purpose-built to st
 
 **Reads that need both documents** (e.g., the owner's own settings screen) issue two reads — a `get()` on `users/{userId}` plus one on `users/{userId}/private/profile` — which is a negligible cost relative to the alternative of over-broad field exposure; this is a standard, well-understood Firestore pattern, not a novel workaround.
 
-### 3.1a `users/{userId}/private/photoModeration/{uploadId}`
+### 3.1a `users/{userId}/photoModeration/{uploadId}`
 
 Added Milestone F5, closing a gap `completeAccountSetup` (§3.9 below, `API_SPEC.md` §3.9) previously left unresolved: `users/{userId}.photoUrl` above is documented as "post-moderation," but until this milestone no moderation pipeline existed anywhere in this codebase, and `completeAccountSetup`'s original spec text took a raw client-supplied `photoUrl` string on faith — the two documents disagreed about whether the field was ever actually gated. This subcollection is the fix: one document per upload attempt, written **entirely** by the Storage-triggered moderation Cloud Function (`FIREBASE.md` §2.5, ADR 0006) via the Admin SDK. The client never writes this document directly — it uploads the raw photo to Cloud Storage and listens here for the verdict.
 
+**Path corrected in Milestone F5's task #97 (rules-emulator tests):** this section originally specified `users/{userId}/private/photoModeration/{uploadId}` — 5 path segments, which is structurally invalid as a Firestore *document* path (documents always sit at an even segment count; an odd count is a collection path), so both the moderation Function's Admin-SDK write and the client's listen would have thrown on first real use. Caught while writing this path's rules tests — the first work to exercise the path against a real emulator rather than a hand-written fake. The document is now a direct subcollection of the user document. Nothing is lost by leaving the `private/` prefix behind: that prefix never carried any access-control semantics of its own (`§6`'s rules are what make `private/profile` private, and the same owner-only-read/no-client-write rules apply here), it existed to solve the public/private *field split* of the profile document specifically.
+
 ```
-users/{userId}/private/photoModeration/{uploadId}   // PRIVATE — readable only by request.auth.uid == userId;
-                                                      // every field Functions-only-writable, no exceptions (§6)
+users/{userId}/photoModeration/{uploadId}   // PRIVATE — readable only by request.auth.uid == userId;
+                                              // every field Functions-only-writable, no exceptions (§6)
 ├─ status: string                       // enum: "pending" | "approved" | "flagged"
 ├─ approvedUrl: string | null           // set only when status == "approved" — the public Cloud Storage download
 │                                       // URL of the *copied*, post-moderation object (see FIREBASE.md §2.5's
@@ -553,12 +555,15 @@ match /databases/{database}/documents {
       allow delete: if false;
     }
 
-    match /private/photoModeration/{uploadId} {
-      // Added Milestone F5, §3.1a above. The owner may READ their own upload's verdict (Profile Setup
-      // listens here to know when to enable "Continue"), but every write comes from the Storage-triggered
-      // moderation Function via the Admin SDK, which bypasses these rules entirely — there is no client
-      // write path to this document at all, matching the "never trust the client for this field" intent
-      // FIREBASE.md §2.5 states and completeAccountSetup (API_SPEC.md §3.9) now actually enforces.
+    match /photoModeration/{uploadId} {
+      // Added Milestone F5, §3.1a above; path corrected from
+      // `/private/photoModeration/{uploadId}` in task #97 — see §3.1a's correction note (the original
+      // 5-segment path could never match a real document). The owner may READ their own upload's verdict
+      // (Profile Setup listens here to know when to enable "Continue"), but every write comes from the
+      // Storage-triggered moderation Function via the Admin SDK, which bypasses these rules entirely —
+      // there is no client write path to this document at all, matching the "never trust the client for
+      // this field" intent FIREBASE.md §2.5 states and completeAccountSetup (API_SPEC.md §3.9) now
+      // actually enforces.
       allow read: if isSignedIn() && request.auth.uid == userId;
       allow write: if false;
     }
