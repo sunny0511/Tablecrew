@@ -67,36 +67,52 @@ export function isValidVisibility(value: unknown): value is 'open' | 'closed' {
 interface LocationInput {
   geopoint?: unknown;
   venueId?: unknown;
+  venueName?: unknown;
   address?: unknown;
 }
 
 /**
- * docs/API_SPEC.md §3.1 `createTable`'s documented request shape:
- * `{ geopoint: {lat, lng}, venueId?: string, address: string }` — both
- * `geopoint` and `address` are required in this request contract (not
- * nullable), even though docs/DATABASE.md §3.2's stored schema allows both
- * to be `null` for a "Location TBD" Table. **Disclosed gap:** the
- * `isTBD`/`tbdConfirmBy` "Location TBD" flow docs/FEATURES.md names has no
- * reachable path through `createTable`'s current documented request shape
- * at all (no `isTBD` request field exists to set it true) — this
- * validator, and `createTable` below, are faithful to the request contract
- * as actually documented, not a guess at the TBD flow's shape. Every new
- * Table this milestone creates therefore has `location.isTBD: false`.
+ * docs/API_SPEC.md §3.1 `createTable`'s request shape, as corrected in
+ * Milestone F6: `{ geopoint: {lat, lng} | null, venueId?: string,
+ * venueName?: string, address: string }`.
+ *
+ * Two F6 corrections to the original F4 contract, both driven by Screen 11
+ * (Venue Picker)'s manual-entry fallback becoming real client code:
+ * - `geopoint` is now nullable. A manually-entered venue
+ *   (docs/SCREEN_SPECIFICATIONS.md Screen 11: "Can't find it? Add
+ *   manually" — name + address, no coordinates) has no client-side
+ *   geocoding path, and docs/DATABASE.md §3.2's stored schema always
+ *   allowed `geopoint: null`. A null geopoint is the concrete
+ *   representation of Screen 11's "flagged internally as
+ *   unverified-location" — no separate flag field is invented.
+ * - `venueName` is added. The stored `location.venueNameSnapshot` had no
+ *   request-side source at all (createTable wrote it as always-null), so
+ *   every Table card would have rendered a nameless venue forever.
+ *
+ * **Still-disclosed gap, unchanged from F4:** the `isTBD`/`tbdConfirmBy`
+ * "Location TBD" flow has no reachable path through this request shape
+ * (no `isTBD` field) — every created Table has `location.isTBD: false`.
+ * A null geopoint with a real address is a *known place awaiting
+ * geocoding*, not a TBD location.
  */
 export function isValidLocation(value: unknown): value is {
-  geopoint: {lat: number; lng: number};
+  geopoint: {lat: number; lng: number} | null;
   venueId?: string | null;
+  venueName?: string | null;
   address: string;
 } {
   if (typeof value !== 'object' || value === null) return false;
-  const {geopoint, venueId, address} = value as LocationInput;
+  const {geopoint, venueId, venueName, address} = value as LocationInput;
 
-  if (typeof geopoint !== 'object' || geopoint === null) return false;
-  const {lat, lng} = geopoint as {lat?: unknown; lng?: unknown};
-  if (typeof lat !== 'number' || lat < -90 || lat > 90) return false;
-  if (typeof lng !== 'number' || lng < -180 || lng > 180) return false;
+  if (geopoint !== null && geopoint !== undefined) {
+    if (typeof geopoint !== 'object') return false;
+    const {lat, lng} = geopoint as {lat?: unknown; lng?: unknown};
+    if (typeof lat !== 'number' || lat < -90 || lat > 90) return false;
+    if (typeof lng !== 'number' || lng < -180 || lng > 180) return false;
+  }
 
   if (venueId !== undefined && venueId !== null && typeof venueId !== 'string') return false;
+  if (venueName !== undefined && venueName !== null && typeof venueName !== 'string') return false;
   if (typeof address !== 'string' || address.trim().length === 0) return false;
 
   return true;

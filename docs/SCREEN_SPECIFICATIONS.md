@@ -547,16 +547,17 @@ Any authenticated user. Tier 1 is sufficient for Crew-only/Closed Tables; Tier 2
 
 #### UI Components
 - Fraunces headline: "Plan a Table"
+- Title field — **added 2026-08, Milestone F6:** this list never named one, but `API_SPEC.md` §3.1's `createTable` has always required `title` (1-100 chars), and every Table Card/Detail surface in this document renders it; the omission was a spec gap found while building this screen for real, not a deliberate no-title design. Free text, required.
 - Interest/activity tag selector (single-select, same taxonomy as Interest Selection — drives the headcount default below)
 - Venue field launching Venue Picker
 - Date/time pickers
 - Headcount stepper whose **default value is set by the selected activity tag** — Coffee/Mentorship default range 2–4 (starts at 3), Lunch default range 3–5 (starts at 4), Dinner/Founder-dinners default range 4–6 (starts at 5), Board Games/Hiking default range 4–8 (starts at 6) — with absolute bounds hard-clamped to 2 and 8 regardless of activity
-- Visibility toggle (Crew-only/Closed, Open, Discover-listed) with inline explanatory copy per option
-- Optional recurring-Table toggle ("Repeat this Table weekly/monthly")
+- Visibility toggle (Crew-only/Closed, Open, Discover-listed) with inline explanatory copy per option. **Milestone F6 note:** Open/Discover are shown but disabled with explanatory copy, not built yet — `docs/IMPLEMENTATION_PLAN.md` §4 schedules the Open-visibility branch (and the Tier 2 identity-verification interstitial it depends on) for Milestone F7, not F6, which builds Crew-only/Closed Tables only.
+- ~~Optional recurring-Table toggle ("Repeat this Table weekly/monthly")~~ — **removed 2026-08:** `scheduleRecurringTable` was pulled out of Foundation scope entirely in the Discover re-scope (`docs/IMPLEMENTATION_PLAN.md` §2.4, `TASKS.md`'s "Foundation re-scoped" entry), deferred to Phase 1. This line was left stale after that decision; corrected here rather than left implying a toggle F6 (or any Foundation milestone) actually builds.
 - Terracotta primary button ("Create Table")
 
 #### API Calls
-`createTable` (idempotent, requires a client-generated `idempotencyKey`) on submission; `scheduleRecurringTable` instead of/alongside `createTable` when the recurring toggle is enabled; `updateTable` if the user re-enters this screen to edit a still-Proposed Table.
+`createTable` (idempotent, requires a client-generated `idempotencyKey`) on submission; `updateTable` if the user re-enters this screen to edit a still-Proposed Table. (No `scheduleRecurringTable` call — see the removed recurring-toggle note above.)
 
 #### Validation Rules
 - Activity tag required; venue required (must be selected via Venue Picker — free-text venue name alone is not accepted)
@@ -574,7 +575,7 @@ The venue field's unselected state is a dashed-outline row with a pin icon and I
 The entire form persists as a continuous local draft — every field change saves to local storage immediately, not just on exit — so backgrounding or losing connectivity never loses in-progress input. If "Create Table" is tapped while offline, the Table is created locally in a client-only "Draft — will send when back online" state (visually distinct from a real Proposed chip), and `createTable` fires automatically on reconnect using the same `idempotencyKey` generated at draft time, guaranteeing no duplicate Table even if the retry fires more than once.
 
 #### Analytics Events
-- `table_created` (existing; properties: activity tag, headcount selected vs. recommended default, visibility, recurring flag)
+- `table_created` (existing; properties: activity tag, headcount selected vs. recommended default, visibility — no recurring-flag property; see the removed recurring-toggle note above)
 - `crew_table_scheduled` (existing; fired instead of/alongside `table_created` when entered via a Crew Card's "Schedule a Table" shortcut)
 
 #### Accessibility Notes
@@ -586,6 +587,8 @@ Smart venue suggestions based on the selected activity tag and past host behavio
 ---
 
 ### 11. Venue Picker
+
+**Milestone F6 note:** this screen ships as manual-entry only (the "Can't find it? Add manually" fallback below, promoted to the primary and only path) — no maps/places provider has ever been chosen or provisioned anywhere in this project (this section's own API Calls line has always deferred to "the underlying maps/places provider per `ARCHITECTURE.md`," and `ARCHITECTURE.md` names none). Provider selection is a real founder decision (vendor, API key, billing), tracked in `TASKS.md`, not guessed at here. The search UI, map preview, and location-bias affordance below describe the intended v2 once a provider is chosen — manual entry already produces the same structured `{name, address}` shape `createTable` needs, just without coordinates (`API_SPEC.md` §3.1's F6 correction: `location.geopoint` is nullable for exactly this case).
 
 #### Purpose
 A focused search-and-select surface for choosing a real, mappable venue for a Table, invoked from Create Table so venues are always structured data (name, address, coordinates) rather than free text.

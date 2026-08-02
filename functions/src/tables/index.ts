@@ -181,8 +181,16 @@ export const createTable = onCall<CreateTableRequest>(
 
               const tableRef = db.collection('tables').doc();
               const now = FieldValue.serverTimestamp();
-              const loc = location as
-                {geopoint: {lat: number; lng: number}; venueId?: string | null; address: string};
+              // F6 correction (see isValidLocation's doc comment): geopoint
+              // is nullable (manual-entry venues carry no coordinates) and
+              // venueName now sources venueNameSnapshot, which this
+              // previously wrote as always-null.
+              const loc = location as {
+                geopoint: {lat: number; lng: number} | null;
+                venueId?: string | null;
+                venueName?: string | null;
+                address: string;
+              };
 
               await tableRef.create({
                 hostId: uid,
@@ -198,9 +206,11 @@ export const createTable = onCall<CreateTableRequest>(
                 visibility,
                 status: 'proposed',
                 location: {
-                  geopoint: new GeoPoint(loc.geopoint.lat, loc.geopoint.lng),
+                  geopoint: loc.geopoint == null ?
+                    null :
+                    new GeoPoint(loc.geopoint.lat, loc.geopoint.lng),
                   venueId: loc.venueId ?? null,
-                  venueNameSnapshot: null,
+                  venueNameSnapshot: loc.venueName ?? null,
                   address: loc.address,
                   isTBD: false,
                   tbdConfirmBy: null,
@@ -317,12 +327,21 @@ export const updateTable = onCall<UpdateTableRequest>(
             fieldsChanged.push('capacity');
           }
           if ('location' in p) {
-            const loc = p.location as
-              {geopoint: {lat: number; lng: number}; venueId?: string | null; address: string};
+            // Same F6 nullable-geopoint/venueName correction as
+            // createTable — see isValidLocation's doc comment.
+            const loc = p.location as {
+              geopoint: {lat: number; lng: number} | null;
+              venueId?: string | null;
+              venueName?: string | null;
+              address: string;
+            };
             updates.location = {
               ...(data.location as Record<string, unknown>),
-              geopoint: new GeoPoint(loc.geopoint.lat, loc.geopoint.lng),
+              geopoint: loc.geopoint == null ?
+                null :
+                new GeoPoint(loc.geopoint.lat, loc.geopoint.lng),
               venueId: loc.venueId ?? null,
+              venueNameSnapshot: loc.venueName ?? null,
               address: loc.address,
             };
             fieldsChanged.push('location');

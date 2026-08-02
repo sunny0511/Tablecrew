@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tablecrew/core/offline/idempotency_key_store.dart';
+import 'package:tablecrew/data/connectivity_repository.dart';
 
 part 'offline_mutation_queue.g.dart';
 
@@ -59,22 +59,49 @@ class OfflineMutationQueuedException implements Exception {
 /// online"; listen to [reconnected] and call [run] again with the same
 /// `mutationId` — the underlying store hands back the same key
 /// automatically.
-@riverpod
+/// `keepAlive: true`, not the `@riverpod` autoDispose default — a real bug
+/// found while wiring this class's first real feature consumer
+/// (`CreateTableController`, Milestone F6). Every real call site only ever
+/// `ref.read`s this provider (`run`/`release`/`reconnected` are all
+/// accessed via `.notifier`, and nothing anywhere `ref.watch`es it), which
+/// per Riverpod's own docs means no listener is ever registered — an
+/// autoDispose provider with zero listeners for a full frame has its
+/// state destroyed. Confirmed via a real `flutter test` run:
+/// `CreateTableController.submit()`'s `await
+/// ref.read(offlineMutationQueueProvider.future)` (needed to avoid a
+/// separate `LateInitializationError` — see that await's own comment)
+/// left just enough of a gap for the provider to be disposed before the
+/// very next line read `.notifier`, throwing `UnmountedRefException`.
+/// Exactly the same bug class this codebase has already hit twice —
+/// `SplashScreen`'s autoDispose-during-loading crash (Milestone F5 task
+/// #95) and `OnboardingProfileDraftController`'s silent mid-onboarding
+/// reset (task #96) — and the fix is the same: `keepAlive: true`. It also
+/// matches this class's own doc comment's stated intent ("exposes ...
+/// pending-mutation state" for, e.g., a background sync banner) — that
+/// can't work if the provider doesn't outlive whichever screen last read
+/// it.
+@Riverpod(keepAlive: true)
 class OfflineMutationQueue extends _$OfflineMutationQueue {
   late IdempotencyKeyStore _keyStore;
-  late Connectivity _connectivity;
+  late ConnectivityRepository _connectivity;
   StreamController<void>? _reconnectedController;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<bool>? _connectivitySubscription;
   bool _wasOffline = false;
 
   @override
   Future<Set<String>> build() async {
     final prefs = await SharedPreferences.getInstance();
     _keyStore = IdempotencyKeyStore(prefs);
-    _connectivity = Connectivity();
+    // Milestone F6: reconciled from a raw `Connectivity()` construction
+    // onto `ConnectivityRepository` — the same untestable-under-plain-
+    // `flutter test` pattern task #96 already fixed in the onboarding
+    // screens and `AccountSetupController`; this class was the last
+    // holdout, caught when Create Table's controller (the first real
+    // feature consumer of this queue) needed to drive it with a fake.
+    _connectivity = ref.read(connectivityRepositoryProvider);
     _reconnectedController = StreamController<void>.broadcast();
-    _wasOffline = _isOffline(await _connectivity.checkConnectivity());
-    _connectivitySubscription = _connectivity.onConnectivityChanged.listen(
+    _wasOffline = await _connectivity.isOffline();
+    _connectivitySubscription = _connectivity.offlineChanges.listen(
       _onConnectivityChanged,
     );
 
@@ -121,7 +148,7 @@ class OfflineMutationQueue extends _$OfflineMutationQueue {
     final key = await _keyStore.keyFor(mutationId);
     await _setPending(mutationId, pending: true);
 
-    if (_isOffline(await _connectivity.checkConnectivity())) {
+    if (await _connectivity.isOffline()) {
       throw OfflineMutationQueuedException(
         mutationId: mutationId,
         idempotencyKey: key,
@@ -154,14 +181,10 @@ class OfflineMutationQueue extends _$OfflineMutationQueue {
     state = AsyncData(next);
   }
 
-  void _onConnectivityChanged(List<ConnectivityResult> results) {
-    final isOffline = _isOffline(results);
+  void _onConnectivityChanged(bool isOffline) {
     if (_wasOffline && !isOffline) {
       _reconnectedController?.add(null);
     }
     _wasOffline = isOffline;
   }
-
-  bool _isOffline(List<ConnectivityResult> results) =>
-      results.isEmpty || results.every((r) => r == ConnectivityResult.none);
 }

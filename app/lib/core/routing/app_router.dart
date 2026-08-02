@@ -8,6 +8,7 @@ import 'package:tablecrew/features/onboarding/presentation/otp_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/phone_entry_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/profile_setup_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/splash_screen.dart';
+import 'package:tablecrew/features/tables/presentation/create_table_screen.dart';
 import 'package:tablecrew/features/tables/presentation/home_screen.dart';
 
 /// TableCrew's GoRouter route table — Milestone F3 ("Client foundation")
@@ -107,10 +108,16 @@ final GoRouter appRouter = GoRouter(
       name: 'home',
       pageBuilder: (context, state) => _screenPage(const HomeScreen(), state),
     ),
-    _stubRoute(
-      AppRoutes.createTable,
+    // Milestone F6: real Create Table screen, replacing the F3 stub. An
+    // optional `crewId` query parameter carries the "Schedule a Table"
+    // entry point's pre-fill (Home's Crew Card quick action).
+    GoRoute(
+      path: AppRoutes.createTable,
       name: 'create-table',
-      title: 'Create Table',
+      pageBuilder: (context, state) => _screenPage(
+        CreateTableScreen(crewId: state.uri.queryParameters['crewId']),
+        state,
+      ),
     ),
     GoRoute(
       path: AppRoutes.tableDetail,

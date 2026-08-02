@@ -409,7 +409,10 @@ class _CrewCard extends StatelessWidget {
                     ),
                   ),
                   TextButton(
-                    onPressed: () => context.goNamed('create-table'),
+                    onPressed: () => context.goNamed(
+                      'create-table',
+                      queryParameters: {'crewId': crew.id},
+                    ),
                     child: const Text('Schedule a Table'),
                   ),
                 ],

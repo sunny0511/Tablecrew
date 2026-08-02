@@ -37,7 +37,15 @@ Creates a new Table with the caller as host.
   description?: string,             // optional, max 1000 chars
   interestTag?: string,             // optional, must be a known tag from the interest-tag taxonomy
   visibility: "open" | "closed",    // required
-  location: { geopoint: {lat, lng}, venueId?: string, address: string },
+  location: { geopoint: {lat, lng} | null, venueId?: string, venueName?: string, address: string },
+                                     // geopoint nullable + venueName added (2026-08, Milestone F6): Screen 11
+                                     // (Venue Picker)'s manual-entry fallback produces a name + address with no
+                                     // coordinates and no client-side geocoding path exists, so requiring geopoint
+                                     // made every manually-entered venue unsubmittable — DATABASE.md §3.2's stored
+                                     // schema always allowed geopoint: null (a null geopoint is the concrete form
+                                     // of Screen 11's "flagged internally as unverified-location"). venueName
+                                     // sources the stored venueNameSnapshot, which previously had no request-side
+                                     // source at all and was written always-null.
   startTime: ISO8601 string,        // required, must be > now + 1 hour (min lead time)
   capacity: { min: number, max: number },  // required, 2 <= min <= max <= 8 (hard platform-wide ceiling — corrected
                                      // 2026-08 from an earlier 12; see DATABASE.md §3.2, PRODUCT.md)

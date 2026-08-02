@@ -46,7 +46,7 @@ test('isValidVisibility only accepts the two documented enum values', () => {
   assert.equal(isValidVisibility(undefined), false);
 });
 
-test('isValidLocation requires a valid geopoint and non-empty address', () => {
+test('isValidLocation requires a valid-or-null geopoint and non-empty address', () => {
   assert.equal(
       isValidLocation({geopoint: {lat: 17.385, lng: 78.4867}, address: '123 Main St'}),
       true,
@@ -55,8 +55,20 @@ test('isValidLocation requires a valid geopoint and non-empty address', () => {
       isValidLocation({geopoint: {lat: 17.385, lng: 78.4867}, venueId: 'v1', address: '123 Main St'}),
       true,
   );
+  // F6 correction: a manual-entry venue (Screen 11's fallback) has a name
+  // and address but no coordinates - geopoint null is now a valid shape.
+  assert.equal(
+      isValidLocation({geopoint: null, venueName: 'Broadway Cafe', address: '123 Main St'}),
+      true,
+      'manual-entry venue: null geopoint with venueName',
+  );
+  assert.equal(
+      isValidLocation({geopoint: {lat: 17.385, lng: 78.4867}, venueName: 'Broadway Cafe', address: '123 Main St'}),
+      true,
+      'venueName alongside a real geopoint',
+  );
   assert.equal(isValidLocation(null), false);
-  assert.equal(isValidLocation({}), false);
+  assert.equal(isValidLocation({}), false, 'address still required even with geopoint omitted');
   assert.equal(isValidLocation({geopoint: {lat: 91, lng: 0}, address: 'x'}), false, 'lat out of range');
   assert.equal(isValidLocation({geopoint: {lat: 0, lng: 181}, address: 'x'}), false, 'lng out of range');
   assert.equal(isValidLocation({geopoint: {lat: 0, lng: 0}, address: ''}), false, 'empty address');
@@ -65,6 +77,11 @@ test('isValidLocation requires a valid geopoint and non-empty address', () => {
       isValidLocation({geopoint: {lat: 0, lng: 0}, venueId: 42, address: 'x'}),
       false,
       'venueId must be a string when present',
+  );
+  assert.equal(
+      isValidLocation({geopoint: null, venueName: 42, address: 'x'}),
+      false,
+      'venueName must be a string when present',
   );
 });
 
