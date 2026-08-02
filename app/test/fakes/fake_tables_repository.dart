@@ -15,6 +15,14 @@ class FakeTablesRepository implements TablesRepository {
   /// mirroring the real implementation's deleted/unreadable mapping.
   final Map<String, TableSummary> tablesById = {};
 
+  /// What [fetchMyRsvpStatus] resolves per `tableId`. An absent id
+  /// resolves `null` (no RSVP).
+  final Map<String, RsvpStatus> myRsvpStatusByTableId = {};
+
+  /// What [fetchAttendees] resolves per `tableId`. An absent id resolves
+  /// an empty list.
+  final Map<String, List<AttendeeSummary>> attendeesByTableId = {};
+
   /// If set, every fetch throws this — for error-state tests.
   Exception? fetchError;
 
@@ -38,6 +46,20 @@ class FakeTablesRepository implements TablesRepository {
     if (error != null) throw error;
     return tablesById[tableId];
   }
+
+  @override
+  Future<RsvpStatus?> fetchMyRsvpStatus(String tableId, String uid) async {
+    final error = fetchError;
+    if (error != null) throw error;
+    return myRsvpStatusByTableId[tableId];
+  }
+
+  @override
+  Future<List<AttendeeSummary>> fetchAttendees(String tableId) async {
+    final error = fetchError;
+    if (error != null) throw error;
+    return attendeesByTableId[tableId] ?? [];
+  }
 }
 
 /// Builds a [TableSummary] with test defaults — override just the fields
@@ -53,6 +75,7 @@ TableSummary buildTestTableSummary({
   int capacityMax = 6,
   String? interestTag,
   String? venueName,
+  String? crewId,
 }) {
   return TableSummary(
     id: id,
@@ -64,5 +87,6 @@ TableSummary buildTestTableSummary({
     capacityMax: capacityMax,
     interestTag: interestTag,
     venueName: venueName,
+    crewId: crewId,
   );
 }

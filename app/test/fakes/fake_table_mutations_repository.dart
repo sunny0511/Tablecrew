@@ -60,4 +60,77 @@ class FakeTableMutationsRepository implements TableMutationsRepository {
     if (error != null) throw error;
     return createTableResult;
   }
+
+  /// What [requestSeat] returns on success.
+  RequestSeatResult requestSeatResult = const RequestSeatResult('requested');
+
+  /// If set, [requestSeat] throws this instead.
+  Exception? requestSeatError;
+
+  /// Every [requestSeat] call's `(tableId, idempotencyKey)`, in order.
+  final List<({String tableId, String idempotencyKey})> requestSeatCalls = [];
+
+  @override
+  Future<RequestSeatResult> requestSeat({
+    required String tableId,
+    required String idempotencyKey,
+  }) async {
+    requestSeatCalls.add((tableId: tableId, idempotencyKey: idempotencyKey));
+    final error = requestSeatError;
+    if (error != null) throw error;
+    return requestSeatResult;
+  }
+
+  /// If set, [cancelRsvp] throws this instead of succeeding.
+  Exception? cancelRsvpError;
+
+  /// Every [cancelRsvp] call's `(tableId, idempotencyKey)`, in order.
+  final List<({String tableId, String idempotencyKey})> cancelRsvpCalls = [];
+
+  @override
+  Future<void> cancelRsvp({
+    required String tableId,
+    required String idempotencyKey,
+  }) async {
+    cancelRsvpCalls.add((tableId: tableId, idempotencyKey: idempotencyKey));
+    final error = cancelRsvpError;
+    if (error != null) throw error;
+  }
+
+  /// If set, [confirmAttendee] throws this instead of succeeding.
+  Exception? confirmAttendeeError;
+
+  /// Every [confirmAttendee] call's arguments, in order.
+  final List<({String tableId, String targetUserId, String idempotencyKey})>
+      confirmAttendeeCalls = [];
+
+  @override
+  Future<void> confirmAttendee({
+    required String tableId,
+    required String targetUserId,
+    required String idempotencyKey,
+  }) async {
+    confirmAttendeeCalls.add(
+      (
+        tableId: tableId,
+        targetUserId: targetUserId,
+        idempotencyKey: idempotencyKey,
+      ),
+    );
+    final error = confirmAttendeeError;
+    if (error != null) throw error;
+  }
+
+  /// If set, [cancelTable] throws this instead of succeeding.
+  Exception? cancelTableError;
+
+  /// Every [cancelTable] call's `(tableId, reason)`, in order.
+  final List<({String tableId, String? reason})> cancelTableCalls = [];
+
+  @override
+  Future<void> cancelTable({required String tableId, String? reason}) async {
+    cancelTableCalls.add((tableId: tableId, reason: reason));
+    final error = cancelTableError;
+    if (error != null) throw error;
+  }
 }

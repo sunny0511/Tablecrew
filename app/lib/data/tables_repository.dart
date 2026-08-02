@@ -102,6 +102,7 @@ class TableSummary {
     required this.capacityMax,
     this.interestTag,
     this.venueName,
+    this.crewId,
   });
 
   /// Maps a Firestore document to a summary.
@@ -118,6 +119,7 @@ class TableSummary {
       capacityMax: (capacity?['max'] as num?)?.toInt() ?? 0,
       interestTag: data['interestTag'] as String?,
       venueName: location?['venueNameSnapshot'] as String?,
+      crewId: data['crewId'] as String?,
     );
   }
 
@@ -147,6 +149,47 @@ class TableSummary {
 
   /// `location.venueNameSnapshot`, if a venue is chosen.
   final String? venueName;
+
+  /// The Crew this Table was created on behalf of, if any
+  /// (`docs/DATABASE.md` §3.2) — Invite & Share Sheet's Crew-member
+  /// multi-select source.
+  final String? crewId;
+}
+
+/// One row of a Table's attendee list (`docs/DATABASE.md` §3.3), for
+/// Table Detail (Screen 13). **Host-only in practice** — see
+/// [TablesRepository.fetchAttendees]'s doc comment for why a non-host
+/// can't list this at all under the current rules+schema.
+class AttendeeSummary {
+  /// Creates a row.
+  const AttendeeSummary({
+    required this.uid,
+    required this.displayName,
+    required this.status,
+    this.photoUrl,
+  });
+
+  /// Maps a Firestore rsvp document to a row.
+  factory AttendeeSummary.fromDoc(String uid, Map<String, dynamic> data) {
+    return AttendeeSummary(
+      uid: uid,
+      displayName: data['userDisplayNameSnapshot'] as String? ?? '',
+      photoUrl: data['userPhotoUrlSnapshot'] as String?,
+      status: RsvpStatus.fromWire(data['status'] as String?),
+    );
+  }
+
+  /// The attendee's uid (the rsvp document's own id).
+  final String uid;
+
+  /// Denormalized display name at RSVP time.
+  final String displayName;
+
+  /// Denormalized photo at RSVP time.
+  final String? photoUrl;
+
+  /// This attendee's RSVP status.
+  final RsvpStatus status;
 }
 
 /// One row of the signed-in user's own RSVPs, from the `rsvps`
@@ -199,6 +242,27 @@ abstract interface class TablesRepository {
   /// rows, so a denial means the Table was deleted/rescoped since — a
   /// stale row to skip, not an error state to surface).
   Future<TableSummary?> fetchTable(String tableId);
+
+  /// This user's own RSVP status on [tableId], or `null` if they have none.
+  /// A direct document read (`tables/{tableId}/rsvps/{uid}`), which
+  /// `firestore.rules`' nested rsvps rule allows any signed-in user for
+  /// their own uid.
+  Future<RsvpStatus?> fetchMyRsvpStatus(String tableId, String uid);
+
+  /// The full attendee list for [tableId]. **Host-only, by rules
+  /// construction, not just by convention:** `firestore.rules`' nested
+  /// `rsvps` rule (`rsvpUserId == request.auth.uid || isTableHost(tableId)`)
+  /// is evaluated per-document for a `list()` query exactly like a `get()`
+  /// — so a *non-host* listing the whole subcollection has every document
+  /// but their own fail that check, and Firestore denies the entire query
+  /// rather than silently filtering to the one document that passes. There
+  /// is no denormalized attendee-preview data on the Table document either
+  /// (the same gap `HomeScreen`'s doc comment already discloses for the
+  /// avatar-stack preview) — closing this needs a schema change
+  /// (`docs/DATABASE.md` §4's denormalization pattern), not a client-side
+  /// workaround. Callers must only invoke this for the Table's host;
+  /// non-host callers get [fetchMyRsvpStatus] instead.
+  Future<List<AttendeeSummary>> fetchAttendees(String tableId);
 }
 
 /// The real, Firestore-backed [TablesRepository].
@@ -265,6 +329,23 @@ class FirestoreTablesRepository implements TablesRepository {
       if (e.code == 'permission-denied') return null;
       rethrow;
     }
+  }
+
+  @override
+  Future<RsvpStatus?> fetchMyRsvpStatus(String tableId, String uid) async {
+    final doc = await _firestore.doc('tables/$tableId/rsvps/$uid').get();
+    final data = doc.data();
+    if (!doc.exists || data == null) return null;
+    return RsvpStatus.fromWire(data['status'] as String?);
+  }
+
+  @override
+  Future<List<AttendeeSummary>> fetchAttendees(String tableId) async {
+    final snapshot = await _firestore.collection('tables/$tableId/rsvps').get();
+    return [
+      for (final doc in snapshot.docs)
+        AttendeeSummary.fromDoc(doc.id, doc.data()),
+    ];
   }
 }
 

@@ -39,6 +39,26 @@ class CrewSummary {
   final String? photoUrl;
 }
 
+/// One row of a Crew's member roster (`docs/DATABASE.md` §3.4's
+/// `members` map) — Invite & Share Sheet (Screen 12)'s Crew multi-select.
+class CrewMember {
+  /// Creates a row.
+  const CrewMember({
+    required this.uid,
+    required this.displayName,
+    this.photoUrl,
+  });
+
+  /// The member's uid.
+  final String uid;
+
+  /// Denormalized display name.
+  final String displayName;
+
+  /// Denormalized photo, if set.
+  final String? photoUrl;
+}
+
 /// Firestore reads for the `crews` collection that Home (Screen 9) needs.
 /// Same interface/implementation split and read-only posture as
 /// [`TablesRepository`] (`tables_repository.dart`) — every Crew mutation
@@ -47,16 +67,17 @@ class CrewSummary {
 /// which no Home surface performs.
 ///
 /// Added Milestone F6.
-// One member today, but this stays a repository interface, not a top-level
-// function: F8's Crew management adds more reads here, and the
-// interface/impl split is what lets tests fake it without Firestore (the
-// same reasoning as every other repository in this codebase).
-// ignore: one_member_abstracts
 abstract interface class CrewsRepository {
   /// Crews the user belongs to — `crews where memberIds array-contains
   /// uid`, the exact query shape `firestore.rules`' crews read rule
   /// (`request.auth.uid in resource.data.memberIds`) provably allows.
   Future<List<CrewSummary>> fetchMyCrews(String uid);
+
+  /// One Crew's full member roster, for Invite & Share Sheet's Crew
+  /// multi-select — `null` if the Crew doesn't exist or isn't readable
+  /// (the caller isn't a member), same "stale reference, not an error"
+  /// treatment `TablesRepository.fetchTable` gives a denied read.
+  Future<List<CrewMember>?> fetchCrewMembers(String crewId);
 }
 
 /// The real, Firestore-backed [CrewsRepository].
@@ -77,6 +98,31 @@ class FirestoreCrewsRepository implements CrewsRepository {
     return [
       for (final doc in snapshot.docs) CrewSummary.fromDoc(doc.id, doc.data()),
     ];
+  }
+
+  @override
+  Future<List<CrewMember>?> fetchCrewMembers(String crewId) async {
+    try {
+      final doc = await _firestore.doc('crews/$crewId').get();
+      final data = doc.data();
+      if (!doc.exists || data == null) return null;
+      final members = data['members'] as Map<String, dynamic>? ?? {};
+      return [
+        for (final entry in members.entries)
+          CrewMember(
+            uid: entry.key,
+            displayName:
+                (entry.value as Map<String, dynamic>)['displayNameSnapshot']
+                        as String? ??
+                    '',
+            photoUrl: (entry.value as Map<String, dynamic>)['photoUrlSnapshot']
+                as String?,
+          ),
+      ];
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') return null;
+      rethrow;
+    }
   }
 }
 

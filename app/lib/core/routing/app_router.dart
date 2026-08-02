@@ -10,6 +10,8 @@ import 'package:tablecrew/features/onboarding/presentation/profile_setup_screen.
 import 'package:tablecrew/features/onboarding/presentation/splash_screen.dart';
 import 'package:tablecrew/features/tables/presentation/create_table_screen.dart';
 import 'package:tablecrew/features/tables/presentation/home_screen.dart';
+import 'package:tablecrew/features/tables/presentation/invite_share_screen.dart';
+import 'package:tablecrew/features/tables/presentation/table_detail_screen.dart';
 
 /// TableCrew's GoRouter route table — Milestone F3 ("Client foundation")
 /// deliverable per `docs/IMPLEMENTATION_PLAN.md`.
@@ -119,13 +121,15 @@ final GoRouter appRouter = GoRouter(
         state,
       ),
     ),
+    // Milestone F6: real Table Detail + Invite & Share screens, replacing
+    // their F3 stubs — same route-by-route replacement convention as
+    // every other real screen above.
     GoRoute(
       path: AppRoutes.tableDetail,
       name: 'table-detail',
-      pageBuilder: (context, state) => _stubPage(
-        'Table Detail',
+      pageBuilder: (context, state) => _screenPage(
+        TableDetailScreen(tableId: state.pathParameters['tableId']!),
         state,
-        extraLabel: 'tableId: ${state.pathParameters['tableId']}',
       ),
       routes: [
         _stubRoute(
@@ -133,7 +137,14 @@ final GoRouter appRouter = GoRouter(
           name: 'venue-picker',
           title: 'Venue Picker',
         ),
-        _stubRoute('invite', name: 'invite', title: 'Invite & Share Sheet'),
+        GoRoute(
+          path: 'invite',
+          name: 'invite',
+          pageBuilder: (context, state) => _screenPage(
+            InviteShareScreen(tableId: state.pathParameters['tableId']!),
+            state,
+          ),
+        ),
         _stubRoute('live', name: 'live-table', title: 'Live Table Screen'),
         _stubRoute('chat', name: 'table-chat', title: 'Table Chat'),
         _stubRoute('waitlist', name: 'waitlist', title: 'Waitlist Screen'),

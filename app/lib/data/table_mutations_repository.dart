@@ -89,6 +89,18 @@ class CreateTableResult {
   final String status;
 }
 
+/// The result of a successful `requestSeat` call (docs/API_SPEC.md §3.1).
+class RequestSeatResult {
+  /// Creates a result.
+  const RequestSeatResult(this.rsvpStatus);
+
+  /// The RSVP status the server assigned — for an F6-scope Closed Table,
+  /// always `"requested"` (the server checks `visibility == 'closed'`
+  /// before capacity at all, per `functions/src/tables/index.ts`'s
+  /// `requestSeat`), pending the host's `confirmAttendee`.
+  final String rsvpStatus;
+}
+
 /// The Tables *mutation* surface — the F4 callables, starting with
 /// `createTable` (docs/API_SPEC.md §3.1). Split from the read-only
 /// `TablesRepository` (`tables_repository.dart`) deliberately: reads go
@@ -97,13 +109,7 @@ class CreateTableResult {
 /// boundary structural rather than a comment. Same interface/impl split as
 /// every repository in this codebase.
 ///
-/// Added Milestone F6. `requestSeat`/`cancelRsvp`/... join here with Table
-/// Detail (Screen 13)'s chunk — one member today, but this stays a
-/// repository interface for the same reason `CrewsRepository`
-/// (`crews_repository.dart`) does: more reads land here soon, and the
-/// interface/impl split is what lets tests fake it without a real
-/// Cloud Functions call.
-// ignore: one_member_abstracts
+/// Added Milestone F6.
 abstract interface class TableMutationsRepository {
   /// docs/API_SPEC.md §3.1 `createTable`. [idempotencyKey] comes from
   /// `OfflineMutationQueue.run` (docs/API_SPEC.md §2) — never minted here.
@@ -119,6 +125,41 @@ abstract interface class TableMutationsRepository {
     String? description,
     String? crewId,
   });
+
+  /// docs/API_SPEC.md §3.1 `requestSeat` — Table Detail (Screen 13)'s
+  /// non-attendee primary action. [idempotencyKey] comes from
+  /// `OfflineMutationQueue.run`, same as [createTable].
+  Future<RequestSeatResult> requestSeat({
+    required String tableId,
+    required String idempotencyKey,
+  });
+
+  /// docs/API_SPEC.md §3.1 `cancelRsvp` — Screen 13's attendee "Cancel
+  /// RSVP" primary action. Idempotent by construction server-side (a
+  /// retry after the RSVP is already gone is a no-op success, not an
+  /// error) as well as by [idempotencyKey].
+  Future<void> cancelRsvp({
+    required String tableId,
+    required String idempotencyKey,
+  });
+
+  /// docs/API_SPEC.md §3.1 `confirmAttendee` — the host's action on a
+  /// Requested attendee row, since every `requestSeat` on an F6-scope
+  /// Closed Table lands as `"requested"`, never auto-confirmed.
+  Future<void> confirmAttendee({
+    required String tableId,
+    required String targetUserId,
+    required String idempotencyKey,
+  });
+
+  /// docs/API_SPEC.md §3.1 `cancelTable` — the host's overflow-menu
+  /// action. No `idempotencyKey` in this callable's request contract at
+  /// all (unlike the others above): it's idempotent by construction via
+  /// the Table's own `status` field (a repeat cancel of an already-
+  /// cancelled Table is a no-op success), the same reasoning
+  /// `AccountSetupController`'s doc comment gives for
+  /// `completeAccountSetup` needing no key either.
+  Future<void> cancelTable({required String tableId, String? reason});
 }
 
 /// The real, Cloud Functions-backed [TableMutationsRepository].
@@ -177,18 +218,84 @@ class FirebaseTableMutationsRepository implements TableMutationsRepository {
         status: data['status'] as String,
       );
     } on FirebaseFunctionsException catch (e) {
-      final details = e.details;
-      if (details is Map && details['code'] is String) {
-        throw TableCallableException(
-          code: details['code'] as String,
-          message: (details['message'] as String?) ?? e.message ?? e.code,
-        );
-      }
-      throw TableCallableException(
-        code: e.code,
-        message: e.message ?? e.code,
+      throw _mapException(e);
+    }
+  }
+
+  @override
+  Future<RequestSeatResult> requestSeat({
+    required String tableId,
+    required String idempotencyKey,
+  }) async {
+    try {
+      final result = await _functions
+          .httpsCallable('requestSeat')
+          .call<Map<String, dynamic>>(<String, dynamic>{
+        'tableId': tableId,
+        'idempotencyKey': idempotencyKey,
+      });
+      return RequestSeatResult(result.data['rsvpStatus'] as String);
+    } on FirebaseFunctionsException catch (e) {
+      throw _mapException(e);
+    }
+  }
+
+  @override
+  Future<void> cancelRsvp({
+    required String tableId,
+    required String idempotencyKey,
+  }) async {
+    try {
+      await _functions.httpsCallable('cancelRsvp').call<Map<String, dynamic>>(
+        <String, dynamic>{'tableId': tableId, 'idempotencyKey': idempotencyKey},
+      );
+    } on FirebaseFunctionsException catch (e) {
+      throw _mapException(e);
+    }
+  }
+
+  @override
+  Future<void> confirmAttendee({
+    required String tableId,
+    required String targetUserId,
+    required String idempotencyKey,
+  }) async {
+    try {
+      await _functions
+          .httpsCallable('confirmAttendee')
+          .call<Map<String, dynamic>>(<String, dynamic>{
+        'tableId': tableId,
+        'targetUserId': targetUserId,
+        'idempotencyKey': idempotencyKey,
+      });
+    } on FirebaseFunctionsException catch (e) {
+      throw _mapException(e);
+    }
+  }
+
+  @override
+  Future<void> cancelTable({required String tableId, String? reason}) async {
+    try {
+      await _functions.httpsCallable('cancelTable').call<Map<String, dynamic>>(
+        <String, dynamic>{
+          'tableId': tableId,
+          if (reason != null) 'reason': reason,
+        },
+      );
+    } on FirebaseFunctionsException catch (e) {
+      throw _mapException(e);
+    }
+  }
+
+  TableCallableException _mapException(FirebaseFunctionsException e) {
+    final details = e.details;
+    if (details is Map && details['code'] is String) {
+      return TableCallableException(
+        code: details['code'] as String,
+        message: (details['message'] as String?) ?? e.message ?? e.code,
       );
     }
+    return TableCallableException(code: e.code, message: e.message ?? e.code);
   }
 }
 
