@@ -54,7 +54,8 @@ void main() {
       expect(next.exception, exception);
     });
 
-    test('clearException: true drops the exception regardless of the '
+    test(
+        'clearException: true drops the exception regardless of the '
         'exception parameter', () {
       const exception = PhoneAuthException(code: 'x', message: 'x');
       final withError = const OnboardingPhoneFlowState.initial().copyWith(
@@ -76,8 +77,7 @@ void main() {
       expect(cleared.lockedUntil, isNull);
     });
 
-    test('wrongAttemptCount of 0 is applied, not treated as "unchanged"',
-        () {
+    test('wrongAttemptCount of 0 is applied, not treated as "unchanged"', () {
       final withAttempts = const OnboardingPhoneFlowState.initial().copyWith(
         wrongAttemptCount: 3,
       );

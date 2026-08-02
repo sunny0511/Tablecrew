@@ -56,8 +56,7 @@ void main() {
       expect(cooldown, firstAttempt.add(const Duration(minutes: 15)));
     });
 
-    test('attempts older than the 15-minute window no longer count',
-        () async {
+    test('attempts older than the 15-minute window no longer count', () async {
       final tracker = await buildTracker();
       final oldAttempt = DateTime(2026, 1, 1, 12);
       final now = oldAttempt.add(const Duration(minutes: 16));
