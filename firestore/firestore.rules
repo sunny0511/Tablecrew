@@ -177,6 +177,28 @@ service cloud.firestore {
       }
     }
 
+    // --- collection-group: rsvps --- docs/DATABASE.md §3.3/§5 (Milestone F6)
+    //
+    // The nested match inside /tables/{tableId} above governs direct
+    // single-document access only — Firestore collection-GROUP queries are
+    // matched exclusively by a {path=**} wildcard rule like this one, so
+    // without it the "all my RSVPs across every Table" query Home
+    // (Screen 9's "My Tables") is built on (docs/DATABASE.md §5's
+    // collectionGroup index on rsvps) would be denied outright. Scope is
+    // deliberately narrower than the nested rule: only "my own RSVP
+    // documents" (the one shape the collection-group query needs — a
+    // query that filters userId == request.auth.uid provably satisfies
+    // this and is allowed; any broader query is rejected). The nested
+    // rule's host-can-read-roster branch is NOT duplicated here: a host
+    // reads their Table's roster via the direct subcollection path, never
+    // via a collection-group query, and a collection-group version of
+    // that branch would need an exists()/get() per candidate document.
+    // Writes stay Functions-only, exactly like the nested rule.
+    match /{path=**}/rsvps/{rsvpUserId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
     // --- crews/{crewId} --- docs/DATABASE.md §3.4
 
     match /crews/{crewId} {

@@ -1,12 +1,14 @@
 import {after, before, beforeEach, describe, it} from 'node:test';
 import {assertFails, assertSucceeds, RulesTestEnvironment} from '@firebase/rules-unit-testing';
-import {doc, deleteDoc, getDoc, setDoc, updateDoc} from 'firebase/firestore';
+import {collectionGroup, doc, deleteDoc, getDoc, getDocs, query, setDoc, updateDoc, where} from 'firebase/firestore';
 import {getTestEnv, teardownTestEnv} from './testEnv';
 import {buildRsvpFixture, buildTableFixture} from './fixtures';
 
-// Covers docs/DATABASE.md §3.2/§3.3 / §6: tables/{tableId} and the
-// tables/{tableId}/rsvps/{userId} subcollection, per docs/TESTING.md's
-// "100% of rules paths, positive and negative case" requirement.
+// Covers docs/DATABASE.md §3.2/§3.3 / §5 / §6: tables/{tableId}, the
+// tables/{tableId}/rsvps/{userId} subcollection, and (Milestone F6) the
+// rsvps collection-group read rule backing Home's "all my RSVPs across
+// every Table" query, per docs/TESTING.md's "100% of rules paths,
+// positive and negative case" requirement.
 describe('firestore.rules: tables/{tableId} and rsvps subcollection', () => {
   let testEnv: RulesTestEnvironment;
 
@@ -142,6 +144,38 @@ describe('firestore.rules: tables/{tableId} and rsvps subcollection', () => {
     it('denies the host updating an attendee\'s rsvp document directly', async () => {
       const alice = testEnv.authenticatedContext('alice').firestore();
       await assertFails(updateDoc(doc(alice, 'tables/closed-table/rsvps/bob'), {status: 'confirmed'}));
+    });
+  });
+
+  // Milestone F6, docs/DATABASE.md §5: the {path=**}/rsvps collection-group
+  // rule backing Home (Screen 9)'s "My Tables" query. Nested match rules
+  // never apply to collection-group queries, so this rule (and these tests)
+  // exist separately from the subcollection blocks above.
+  describe('rsvps collection-group query', () => {
+    it('allows a user to query their own rsvps across all tables', async () => {
+      const bob = testEnv.authenticatedContext('bob').firestore();
+      await assertSucceeds(getDocs(
+          query(collectionGroup(bob, 'rsvps'), where('userId', '==', 'bob')),
+      ));
+    });
+
+    it('denies a user querying someone else\'s rsvps', async () => {
+      const carol = testEnv.authenticatedContext('carol').firestore();
+      await assertFails(getDocs(
+          query(collectionGroup(carol, 'rsvps'), where('userId', '==', 'bob')),
+      ));
+    });
+
+    it('denies an unfiltered collection-group query over all rsvps', async () => {
+      const bob = testEnv.authenticatedContext('bob').firestore();
+      await assertFails(getDocs(collectionGroup(bob, 'rsvps')));
+    });
+
+    it('denies an unauthenticated collection-group query', async () => {
+      const anon = testEnv.unauthenticatedContext().firestore();
+      await assertFails(getDocs(
+          query(collectionGroup(anon, 'rsvps'), where('userId', '==', 'bob')),
+      ));
     });
   });
 });

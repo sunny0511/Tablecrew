@@ -8,6 +8,7 @@ import 'package:tablecrew/features/onboarding/presentation/otp_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/phone_entry_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/profile_setup_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/splash_screen.dart';
+import 'package:tablecrew/features/tables/presentation/home_screen.dart';
 
 /// TableCrew's GoRouter route table — Milestone F3 ("Client foundation")
 /// deliverable per `docs/IMPLEMENTATION_PLAN.md`.
@@ -98,7 +99,14 @@ final GoRouter appRouter = GoRouter(
       pageBuilder: (context, state) =>
           _screenPage(const NotificationPrimingScreen(), state),
     ),
-    _stubRoute(AppRoutes.home, name: 'home', title: 'Home (My Tables)'),
+    // Milestone F6: real Home screen, replacing the F3 stub — same
+    // route-by-route replacement convention as the F5 onboarding screens
+    // above.
+    GoRoute(
+      path: AppRoutes.home,
+      name: 'home',
+      pageBuilder: (context, state) => _screenPage(const HomeScreen(), state),
+    ),
     _stubRoute(
       AppRoutes.createTable,
       name: 'create-table',
