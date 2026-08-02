@@ -66,7 +66,7 @@ void main() {
     });
 
     test('clearLockedUntil: true drops lockedUntil', () {
-      final lockedUntil = DateTime(2026, 1, 1);
+      final lockedUntil = DateTime(2026);
       final locked = const OnboardingPhoneFlowState.initial().copyWith(
         status: OnboardingPhoneFlowStatus.locked,
         lockedUntil: lockedUntil,
