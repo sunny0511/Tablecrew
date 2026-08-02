@@ -491,7 +491,7 @@ Firestore automatically indexes every field for single-field equality/range quer
 - **Table listing by host:** `tables` collection, composite on (`hostId` ASC, `status` ASC, `startTime` DESC) — supports a user's "my hosted Tables" screen filtered by status.
 - **RSVP collection-group query by user:** collection-group index on `rsvps` for (`userId` ASC, `status` ASC, `createdAt` DESC) — supports "all my upcoming confirmed RSVPs across every Table" without a top-level rsvps collection.
 - **Crew Tables by recency:** `tables` collection, composite on (`crewId` ASC, `startTime` DESC) — supports a Crew's "upcoming Tables" list.
-- **Reports queue for Trust & Safety tooling:** `reports` collection, composite on (`status` ASC, `createdAt` ASC) — supports the internal triage queue (oldest open reports first); a second composite on (`targetType` ASC, `targetId` ASC, `status` ASC) supports "all open reports against this specific user/Table"; a third composite on (`severity` ASC, `status` ASC, `createdAt` ASC) supports the SEV1/SEV2 surge-detection query described in `SECURITY.md`'s Incident Response surge protocol (§3.6).
+- **Reports queue for Trust & Safety tooling:** `reports` collection, composite on (`status` ASC, `createdAt` ASC) — supports the internal triage queue (oldest open reports first); a second composite on (`targetType` ASC, `targetId` ASC, `status` ASC) supports "all open reports against this specific user/Table"; a third composite on (`severity` ASC, `status` ASC, `createdAt` ASC) supports the SEV1/SEV2 surge-detection query described in `SECURITY.md`'s Incident Response surge protocol (§3.6). **Added Milestone F6:** a fourth composite on (`reporterId` ASC, `targetType` ASC, `targetId` ASC, `status` ASC) backs `reportUser`/`reportTable`'s own `already-exists` duplicate check (`API_SPEC.md` §3.4 — "an identical open report from the same reporter against the same target already exists"), which the second composite above can't serve since it has no `reporterId` field at all.
 - **Venue partner Table history:** `tables` collection, composite on (`location.venueId` ASC, `status` ASC, `startTime` DESC) — supports venue-scoped reporting views before/if those graduate to the Postgres reporting service (`ARCHITECTURE.md` §6).
 - **Split-request lookup by Table:** `splitRequests` collection, single-field index on `tableId` (Firestore's automatic single-field indexing covers this) — supports "does this Table already have an active split request" checks in `createSplitRequest`; a composite on (`hostId` ASC, `createdAt` DESC) supports a host's payment-history view and the scheduled anonymization sweep's per-user lookup (§7).
 
@@ -633,10 +633,19 @@ match /databases/{database}/documents {
   }
 
   match /reports/{reportId} {
-    allow create: if isSignedIn() && request.resource.data.reporterId == request.auth.uid;
-    allow read, update: if false;
-      // reports are never client-readable, including by the reporter or the reported party — only
-      // accessible via the Admin SDK from Trust & Safety internal tooling (a separate, staff-authenticated surface).
+    allow read, create, update, delete: if false;
+      // Corrected 2026-08, Milestone F6: this used to allow a signed-in client to create() its own
+      // report directly (checking only that reporterId matched the caller). That's the same category
+      // of gap this document's own closing "structural principles" list (below) already names —
+      // "anything with a cross-document invariant is rules-write-denied for clients, full stop" — a
+      // client create() cannot enforce reportUser/reportTable's real validation: the per-user daily
+      // rate limit (a sibling rateLimits/ document), the duplicate-open-report check (a query against
+      // other reports documents), the reasonCode allowlist (flagged_media is system-only — a client
+      // create() had no way to exclude it), or the report-threshold auto-suppression side effect on
+      // the target. All of that only exists inside reportUser/reportTable's own Cloud Functions
+      // handler (functions/src/trust/index.ts) — same Functions-only posture as duressSignals below,
+      // and consistent with reports being "never client-readable, including by the reporter or the
+      // reported party," which this rule already got right.
   }
 
   match /splitRequests/{splitRequestId} {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tablecrew/core/auth_state.dart';
 import 'package:tablecrew/core/theme/rsvp_status_colors.dart';
 import 'package:tablecrew/core/theme/spacing_tokens.dart';
 import 'package:tablecrew/core/theme/type_tokens.dart';
@@ -39,10 +40,14 @@ const _cancelWindow = Duration(hours: 2);
 ///   host actions this milestone actually builds. "Edit details" is
 ///   visible but disabled (reusing Create Table's form for editing is
 ///   deferred, flagged as a follow-up).
-/// - **Per-attendee report/block overflow is not built.** `docs/SECURITY.md`/
-///   `CLAUDE.md` safety-gate anything touching reporting/blocking —
-///   that's the Trust & Safety track's own chunk, flagged for explicit
-///   founder review, not bundled in here.
+/// - **Per-attendee report/block overflow** (`_AttendeeRow`'s trailing
+///   menu) was deferred out of this chunk and added in the Trust & Safety
+///   client chunk that followed it, per `docs/SECURITY.md`/`CLAUDE.md`'s
+///   safety-gating of anything touching reporting/blocking. It routes to
+///   Screen 27 (Report Flow) / Screen 28 (Block Confirmation) via plain
+///   query parameters, and is hidden on the current user's own row (self-
+///   report/self-block is prevented by construction, per both screens'
+///   own Validation Rules).
 ///
 /// Added Milestone F6.
 class TableDetailScreen extends ConsumerWidget {
@@ -195,7 +200,11 @@ class _TableDetailBody extends ConsumerWidget {
         ),
         const SizedBox(height: TCSpacing.lg),
         if (data.isHost)
-          _AttendeeList(tableId: tableId, attendees: data.attendees)
+          _AttendeeList(
+            tableId: tableId,
+            attendees: data.attendees,
+            sharesCrew: data.table.crewId != null,
+          )
         else if (data.myRsvpStatus != null)
           StatusChip(
             status: _displayStatusFor(data.myRsvpStatus!),
@@ -269,10 +278,18 @@ class _TableDetailBody extends ConsumerWidget {
 }
 
 class _AttendeeList extends ConsumerWidget {
-  const _AttendeeList({required this.tableId, required this.attendees});
+  const _AttendeeList({
+    required this.tableId,
+    required this.attendees,
+    required this.sharesCrew,
+  });
 
   final String tableId;
   final List<AttendeeSummary> attendees;
+
+  /// Whether this Table is Crew-scoped — passed through to the Block
+  /// Confirmation entry point (see `_AttendeeRow`'s overflow menu).
+  final bool sharesCrew;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -312,6 +329,7 @@ class _AttendeeList extends ConsumerWidget {
           _AttendeeRow(
             tableId: tableId,
             attendee: attendee,
+            sharesCrew: sharesCrew,
           ),
       ],
     );
@@ -319,14 +337,23 @@ class _AttendeeList extends ConsumerWidget {
 }
 
 class _AttendeeRow extends ConsumerWidget {
-  const _AttendeeRow({required this.tableId, required this.attendee});
+  const _AttendeeRow({
+    required this.tableId,
+    required this.attendee,
+    required this.sharesCrew,
+  });
 
   final String tableId;
   final AttendeeSummary attendee;
+  final bool sharesCrew;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
+    // Never surfaced on the current user's own row — self-report/self-
+    // block is prevented by construction, per Screens 27/28's own
+    // Validation Rules, rather than by a validation error message.
+    final isSelf = ref.watch(currentUidProvider) == attendee.uid;
 
     return Semantics(
       label: '${attendee.displayName}, ${_labelFor(attendee.status)}',
@@ -369,6 +396,40 @@ class _AttendeeRow extends ConsumerWidget {
                   child: const Text('Confirm'),
                 ),
               ],
+              if (!isSelf)
+                PopupMenuButton<String>(
+                  tooltip: 'More actions for ${attendee.displayName}',
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'report':
+                        unawaited(
+                          context.pushNamed(
+                            'report',
+                            queryParameters: {
+                              'targetType': 'user',
+                              'targetId': attendee.uid,
+                              'targetDisplayName': attendee.displayName,
+                            },
+                          ),
+                        );
+                      case 'block':
+                        unawaited(
+                          context.pushNamed(
+                            'block',
+                            queryParameters: {
+                              'targetUserId': attendee.uid,
+                              'targetDisplayName': attendee.displayName,
+                              'sharesCrew': sharesCrew.toString(),
+                            },
+                          ),
+                        );
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'report', child: Text('Report')),
+                    PopupMenuItem(value: 'block', child: Text('Block')),
+                  ],
+                ),
             ],
           ),
         ),
