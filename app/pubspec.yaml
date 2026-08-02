@@ -75,8 +75,24 @@ dependencies:
   cloud_firestore: 6.7.1
   cloud_functions: 6.3.5
   firebase_storage: 13.4.5
-  intl_phone_field: ^3.2.0
-  pinput: ^6.0.2
+  # Screens 2-3 (Milestone F5). Re-pinned here from the default caret
+  # ranges `flutter pub add` left in place — a gap in the prior pass that
+  # went unnoticed until this file was touched again, not a deliberate
+  # exception to Recommendation R5's exact-pin policy every other
+  # dependency in this file follows.
+  intl_phone_field: 3.2.0
+  pinput: 6.0.2
+  # Screens 5/7 (Milestone F5). Added via a real `flutter pub add`
+  # (founder's machine, real resolver) then re-pinned from the default
+  # caret ranges to exact versions per Recommendation R5.
+  # - image_picker: Screen 5's required profile-photo picker (camera or
+  #   library).
+  # - permission_handler: Screen 7's OS notification-permission request —
+  #   chosen over `firebase_messaging` since FCM token registration itself
+  #   is explicitly deferred to Milestone F8 (`features/account/README.md`);
+  #   this screen only needs the OS permission prompt, not a token.
+  image_picker: 1.2.3
+  permission_handler: 13.0.0
 
 dev_dependencies:
   flutter_test:
@@ -107,10 +123,11 @@ dev_dependencies:
 # which Firebase Flutter plugins were deliberately not yet pinned pending
 # real `pub get` access. firebase_core/firebase_auth landed F2;
 # cloud_firestore/cloud_functions/firebase_storage landed F5 (see their
-# entries above). Still deliberately not yet pinned: firebase_messaging,
-# firebase_app_check, firebase_crashlytics, firebase_analytics, and
-# image_picker (Screen 5's photo picker) — each lands in the milestone that
-# first needs it.
+# entries above). image_picker also landed F5 (see Screens 5/7 entry
+# above) — the note used to name it as still-pending; it's the last of
+# the originally-listed packages to land. Still deliberately not yet
+# pinned: firebase_messaging, firebase_app_check, firebase_crashlytics,
+# firebase_analytics — each lands in the milestone that first needs it.
 
 flutter:
   uses-material-design: true

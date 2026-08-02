@@ -180,6 +180,23 @@ class PhoneAuthRepository {
     return completer.future;
   }
 
+  /// Signs the current user out, without deleting the underlying Firebase
+  /// Auth account — Screen 4's hard-stop under-18 screen's non-destructive
+  /// option, since no `users/{uid}` profile document was ever created
+  /// (the age gate runs before `completeAccountSetup`), leaving nothing
+  /// else to clean up.
+  Future<void> signOut() => _auth.signOut();
+
+  /// Deletes the current Firebase Auth user outright — Screen 4's
+  /// hard-stop under-18 screen's destructive option, for a user who wants
+  /// to fully leave rather than keep a phone-verified session around for
+  /// a later attempt. A no-op if already signed out.
+  Future<void> deleteAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await user.delete();
+  }
+
   PhoneAuthException _mapException(FirebaseAuthException e) {
     return PhoneAuthException(code: e.code, message: e.message ?? e.code);
   }

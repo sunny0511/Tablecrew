@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Screen 7 (Notification Permission Priming, Milestone F5): Android
+         13 (API 33)+ requires this manifest permission before
+         `permission_handler`'s Permission.notification.request() can show
+         the real system dialog at all — without it the request silently
+         auto-resolves to denied on those OS versions rather than
+         prompting. Runtime request flow itself lives in
+         features/onboarding/presentation/notification_priming_screen.dart. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="tablecrew"
         android:name="${applicationName}"

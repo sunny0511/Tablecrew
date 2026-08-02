@@ -1,19 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tablecrew/features/onboarding/presentation/age_ineligible_screen.dart';
+import 'package:tablecrew/features/onboarding/presentation/dob_entry_screen.dart';
+import 'package:tablecrew/features/onboarding/presentation/interests_screen.dart';
+import 'package:tablecrew/features/onboarding/presentation/notification_priming_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/otp_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/phone_entry_screen.dart';
+import 'package:tablecrew/features/onboarding/presentation/profile_setup_screen.dart';
+import 'package:tablecrew/features/onboarding/presentation/splash_screen.dart';
 
 /// TableCrew's GoRouter route table — Milestone F3 ("Client foundation")
 /// deliverable per `docs/IMPLEMENTATION_PLAN.md`.
 ///
 /// Scope, precisely: this covers every screen `docs/SCREEN_SPECIFICATIONS.md`
 /// specifies that also falls inside Foundation/Phase 0's scope, per
-/// `docs/IMPLEMENTATION_PLAN.md` section 1's scope list. Every route below
-/// renders a stub placeholder — no feature milestone (F4+) has built a real
-/// screen widget yet, and Recommendation R7 explicitly warns against
-/// building ahead of a milestone's actual dependencies (real data, a real
-/// repository layer) existing. This file's job is the *route table shape*
-/// — paths, names, param passing — not screen content.
+/// `docs/IMPLEMENTATION_PLAN.md` section 1's scope list. Every route
+/// originally rendered a stub placeholder — Recommendation R7 explicitly
+/// warned against building ahead of a milestone's actual dependencies (real
+/// data, a real repository layer) existing. This file's job is the *route
+/// table shape* — paths, names, param passing — not screen content.
+///
+/// **Status (Milestone F5, in progress):** most Foundation-scope routes
+/// have since been replaced with real screens, feature-by-feature, per
+/// `_StubScreen`'s "deleted route-by-route as each real screen replaces
+/// it" convention below — see each feature's own README for exactly which
+/// of its screens are real vs. still stubbed. Every route not yet replaced
+/// still renders `_StubScreen`.
 ///
 /// **Deliberately excluded** (per `docs/IMPLEMENTATION_PLAN.md` section 1's
 /// "Explicitly not in Foundation scope" list, and Recommendation R7's
@@ -37,14 +49,15 @@ import 'package:tablecrew/features/onboarding/presentation/phone_entry_screen.da
 final GoRouter appRouter = GoRouter(
   initialLocation: AppRoutes.splash,
   routes: [
-    _stubRoute(
-      AppRoutes.splash,
-      name: 'splash',
-      title: 'Splash / Launch Screen',
-    ),
     // Milestone F5: real screens, replacing the F3 stubs — per this file's
     // own "deleted route-by-route as each real screen replaces it"
     // convention (see _StubScreen's doc comment below).
+    GoRoute(
+      path: AppRoutes.splash,
+      name: 'splash',
+      pageBuilder: (context, state) =>
+          _screenPage(const SplashScreen(), state),
+    ),
     GoRoute(
       path: AppRoutes.phoneEntry,
       name: 'phone-entry',
@@ -56,25 +69,35 @@ final GoRouter appRouter = GoRouter(
       name: 'otp',
       pageBuilder: (context, state) => _screenPage(const OtpScreen(), state),
     ),
-    _stubRoute(
-      AppRoutes.dob,
+    GoRoute(
+      path: AppRoutes.dob,
       name: 'dob',
-      title: 'Date of Birth Entry (Age Gate)',
+      pageBuilder: (context, state) =>
+          _screenPage(const DobEntryScreen(), state),
     ),
-    _stubRoute(
-      AppRoutes.profileSetup,
+    GoRoute(
+      path: AppRoutes.ageIneligible,
+      name: 'age-ineligible',
+      pageBuilder: (context, state) =>
+          _screenPage(const AgeIneligibleScreen(), state),
+    ),
+    GoRoute(
+      path: AppRoutes.profileSetup,
       name: 'profile-setup',
-      title: 'Profile Setup',
+      pageBuilder: (context, state) =>
+          _screenPage(const ProfileSetupScreen(), state),
     ),
-    _stubRoute(
-      AppRoutes.interests,
+    GoRoute(
+      path: AppRoutes.interests,
       name: 'interests',
-      title: 'Interest Selection',
+      pageBuilder: (context, state) =>
+          _screenPage(const InterestsScreen(), state),
     ),
-    _stubRoute(
-      AppRoutes.notificationPriming,
+    GoRoute(
+      path: AppRoutes.notificationPriming,
       name: 'notification-priming',
-      title: 'Notification Permission Priming',
+      pageBuilder: (context, state) =>
+          _screenPage(const NotificationPrimingScreen(), state),
     ),
     _stubRoute(AppRoutes.home, name: 'home', title: 'Home (My Tables)'),
     _stubRoute(
@@ -159,6 +182,12 @@ abstract final class AppRoutes {
 
   /// Screen 4.
   static const dob = '/dob';
+
+  /// Screen 4's hard-stop under-18 destination — not itself a numbered
+  /// screen in `docs/SCREEN_SPECIFICATIONS.md` (it's described inline as
+  /// Screen 4's "hard-stop" exit point), so it gets a name rather than a
+  /// spec-number comment.
+  static const ageIneligible = '/age-ineligible';
 
   /// Screen 5.
   static const profileSetup = '/profile-setup';
