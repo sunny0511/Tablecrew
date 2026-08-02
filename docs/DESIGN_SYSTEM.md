@@ -254,3 +254,62 @@ Workflow:
 5. **Component parity audits:** Quarterly, design and engineering jointly audit shipped screens against the Figma library to catch drift (a common failure mode where engineering hard-codes a "close enough" value under deadline pressure). Drift is logged in `TASKS.md` and resolved within the same quarter.
 
 This document (`DESIGN_SYSTEM.md`) is the canonical written record; the Figma library and generated token file are the canonical *executable* records. When the three disagree, this document and the Figma library win, and the generated token file is regenerated to match — never the reverse.
+
+# Doc patches for `sunny0511/Tablecrew`
+
+Two additions, written to drop into the repo as-is. Both are phrased to match the existing voice of `docs/DESIGN_SYSTEM.md`.
+
+---
+
+## Patch 1 — Venue accessibility, fully specified
+
+**Where it goes:** replaces the final bullet of `docs/DESIGN_SYSTEM.md` §6 ("This is flagged here, not fully specified here…") with the section below. Companion changes are needed in `DATABASE.md` and `API_SPEC.md` — noted at the end.
+
+### 6.1 Venue Accessibility (specification)
+
+Section 6 above governs whether the *app* is usable by someone with a disability. This subsection governs whether the *Table* is. A guest who cannot physically enter the venue is excluded from the Table no matter how accessible the UI is, so this is a first-class product surface, not a metadata footnote.
+
+**Data shape.** A `Venue.accessibilityInfo` object, all fields optional, owned by `DATABASE.md`:
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `stepFreeEntry` | `"yes" \| "no" \| "unsure"` | `"unsure"` | Never a boolean — a boolean forces a false negative or false positive |
+| `accessibleRestroom` | `"yes" \| "no" \| "unsure"` | `"unsure"` | Same three-state rule |
+| `notes` | `string` (max 280) | `""` | Host free-text, e.g. "accessible entrance is around the side, buzz for staff" |
+| `source` | `"host" \| "venuePartner" \| "guestReport"` | `"host"` | Partner-supplied data may be shown as verified; host-supplied is shown as host-reported |
+| `updatedAt` | `timestamp` | — | Surfaced when older than 12 months, so stale data isn't read as current |
+
+`"unsure"` is a first-class value, not an empty state. Hosts frequently do not know a venue's accessibility details with certainty, and a forced yes/no produces data that is worse than no data because guests will trust it.
+
+**Authoring.** The field appears in the Create-a-Table venue step as three segmented controls plus one optional note field. It is never a blocking required step — a host who skips it publishes a Table with `"unsure"` on both flags. Copy follows `COPY_GUIDELINES.md`: "Do you know if this place has step-free entry?" not "Accessibility compliance status."
+
+**Surfacing.** Wherever accessibility data exists on a Table, it appears:
+
+- **Table card** — one line directly beneath the location line, icon + text label per the never-colour-alone rule: a filled icon for `yes`, an outline icon for `no`, a muted icon for `unsure`. `Step-free entry · accessible restroom` when both are `yes`; `Step-free entry · restroom unknown` when mixed; the line is omitted entirely only when both flags are `"unsure"` **and** `notes` is empty.
+- **Table detail** — the same line, plus the host note verbatim and the `source` attribution ("Reported by the host" / "Confirmed by the venue"). Never behind a "more info" disclosure a guest has to know to open.
+- **Never in colour alone**, and never in red. A venue without step-free entry is a fact, not an error — it uses the same neutral treatment as a declined RSVP (Warm Grey `#DCD2C4`), never Brick.
+
+**Discover filter.** `Step-free access` is a first-class filter chip alongside interest, time and distance (`FEATURES.md`). Behaviour: when active, results include only Tables whose venue has `stepFreeEntry === "yes"`, and the empty state names the filter explicitly — "No step-free Tables this week. Try widening the date range." A guest should never have to message a host to ask whether they can get in the door.
+
+**Cross-document ownership.** The schema field belongs to `DATABASE.md`; the Discover query parameter belongs to `API_SPEC.md` and `PRD.md` FR-D*; the copy strings belong to `COPY_GUIDELINES.md`. This section owns the requirement that the field exist, default to `"unsure"`, and be visibly surfaced and filterable.
+
+---
+
+## Patch 2 — Type pairing decision record
+
+**Where it goes:** `docs/DESIGN_SYSTEM.md` §2.1, appended after the existing rationale. Written as a decision to be made, not a change already made — if you accept it, the token table in §2.2 changes family names only, and this paragraph becomes the record of why.
+
+### 2.1a Display face — reconsidering Fraunces
+
+The reasoning behind Fraunces holds: a warm, low-contrast display serif against a humanist sans is the correct structure for a hospitality brand, and it reinforces the "table" half of the name. The concern is not the logic but the ubiquity. Fraunces has become the default friendly-startup serif, and a brand whose entire strategic problem is *being visually mistaken for something else* cannot afford to spend its display face on a face the reader has already filed under a category.
+
+**Alternative under consideration: Newsreader** (display) with either **Instrument Sans** or the existing **Inter** (UI).
+
+- Newsreader is editorial rather than cute — it reads as a printed menu or a letterpress invitation, which is nearer to "someone set this table for you" and further from "an app was built for you." Sharper terminals also hold detail better at the wordmark's 90px minimum reproduction size (`BRAND_GUIDELINES.md` §4) than Fraunces' soft ones — this should be tested before the mark is drawn, because the wordmark is set in the display face and is the most size-constrained use of it.
+- Instrument Sans gives buttons and forms slightly more spine than Inter at the same legibility. **But Inter's Cyrillic and Greek coverage is materially broader**, and `VALUES.md` §4 commits to global-first. If launch outside Latin-script markets is inside the next 18 months, keep Inter for UI and change the display face only. Newsreader + Inter is a legitimate and lower-risk middle path.
+- Both faces are free on Google Fonts, variable, and embed cleanly through Flutter's font pipeline, so the licensing and build-size arguments in §2.1 are unaffected.
+
+**What does not change under either option:** the type scale, weights, line heights and usage rules in §2.2; the "serif carries emotion, sans carries function" restraint rule; the 16px body floor and 200% scaling requirement in §2.3. Only family names move.
+
+**Decision status:** open. Requires a wordmark test at minimum reproduction size and a non-Latin coverage check against the Year-2 launch market list in `ROADMAP.md` before it is recorded here as settled.
+
