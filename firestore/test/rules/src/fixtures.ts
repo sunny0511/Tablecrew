@@ -326,6 +326,66 @@ export function buildCrewFixture(
   };
 }
 
+export interface ReportFixture {
+  reporterId: string;
+  targetType: 'user' | 'table';
+  targetId: string;
+  reasonCode: string;
+  severity: string | null;
+  isDuressSignal: boolean;
+  details: string | null;
+  status: string;
+  assignedTo: string | null;
+  resolutionNotes: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** docs/DATABASE.md §3.6 - reports/{reportId} (Milestone F6). */
+export function buildReportFixture(
+    overrides: Partial<ReportFixture> = {},
+): ReportFixture {
+  const now = Date.now();
+  return {
+    reporterId: 'alice',
+    targetType: 'user',
+    targetId: 'bob',
+    reasonCode: 'harassment',
+    severity: null,
+    isDuressSignal: false,
+    details: null,
+    status: 'open',
+    assignedTo: null,
+    resolutionNotes: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+export interface DuressSignalFixture {
+  triggeredAt: number;
+  lastKnownLocation: null;
+  status: string;
+  linkedReportId: string | null;
+  acknowledgedBy: string | null;
+}
+
+/** docs/DATABASE.md §3.3a - tables/{tableId}/duressSignals/{userId}
+ * (Milestone F6). */
+export function buildDuressSignalFixture(
+    overrides: Partial<DuressSignalFixture> = {},
+): DuressSignalFixture {
+  return {
+    triggeredAt: Date.now(),
+    lastKnownLocation: null,
+    status: 'open',
+    linkedReportId: null,
+    acknowledgedBy: null,
+    ...overrides,
+  };
+}
+
 export interface IdempotencyKeyFixture {
   uid: string;
   endpoint: string;

@@ -2,15 +2,14 @@ rules_version = '2';
 
 // firestore.rules — Milestone F1 (Core data layer & security rules)
 //
-// Scope note: only the five collections named in Milestone F1's deliverables
-// (docs/IMPLEMENTATION_PLAN.md) have real rules below — users (public +
-// private/profile), tables (+ rsvps subcollection), crews, and
-// idempotencyKeys. Every other collection in docs/DATABASE.md (ratings,
-// reports, venues, splitRequests, and the duressSignals/locationShares/
-// crew-messages subcollections) is intentionally still covered only by the
+// Scope note: F1's five collections (users, tables + rsvps, crews,
+// idempotencyKeys) plus Milestone F6's additions (the rsvps collection-group,
+// reports, and tables/{tableId}/duressSignals) have real rules below. Every
+// other collection in docs/DATABASE.md (ratings, venues, splitRequests,
+// locationShares, crew-messages) is intentionally still covered only by the
 // trailing default-deny catch-all at the bottom of this file — those get
 // their own rules and tests in the milestone that builds the feature that
-// actually needs them (F6/F7 per docs/IMPLEMENTATION_PLAN.md), per
+// actually needs them (F7 per docs/IMPLEMENTATION_PLAN.md), per
 // docs/TESTING.md's requirement that rules and their tests ship together,
 // collection by collection, rather than speculatively ahead of the feature.
 //
@@ -175,6 +174,17 @@ service cloud.firestore {
         // direct client write — this is where the capacity invariant above
         // actually lives, and a rule cannot enforce it safely on its own.
       }
+
+      match /duressSignals/{userId} {
+        // Milestone F6 (docs/DATABASE.md §3.3a): Functions-only, structurally
+        // unreadable by any client — including the triggering user
+        // themselves — mirroring `reports` below. `triggerDuressSignal`
+        // (functions/src/trust/index.ts) writes this via the Admin SDK,
+        // which bypasses this rule entirely; there is no legitimate client
+        // read path (Trust & Safety staff use internal tooling, not the
+        // client app, per docs/SECURITY.md's Incident Response section).
+        allow read, write: if false;
+      }
     }
 
     // --- collection-group: rsvps --- docs/DATABASE.md §3.3/§5 (Milestone F6)
@@ -261,11 +271,27 @@ service cloud.firestore {
       // the catch-all to cover it.
     }
 
+    // --- reports/{reportId} --- docs/DATABASE.md §3.6/§6 (Milestone F6)
+
+    match /reports/{reportId} {
+      // Structurally unreadable/unwritable by any client, including the
+      // reporter or the reported party (docs/DATABASE.md §6's correction
+      // note) — a client create() cannot enforce reportUser/reportTable's
+      // real validation (per-user daily rate limit, duplicate-open-report
+      // dedup query, reasonCode allowlist excluding the system-only
+      // `flagged_media` value, and the report-threshold auto-suppression
+      // side effect on the target). All of that only exists inside
+      // reportUser/reportTable's Cloud Functions handler
+      // (functions/src/trust/index.ts), which writes via the Admin SDK and
+      // bypasses this rule entirely.
+      allow read, create, update, delete: if false;
+    }
+
     // --- everything else: default-deny, fails closed not open ---
-    // Ratings, Reports, Venues, splitRequests, and the duressSignals/
-    // locationShares/crew-messages subcollections are out of Milestone F1's
-    // scope (docs/IMPLEMENTATION_PLAN.md) and are covered only by this
-    // catch-all until their own milestone adds real rules + tests for them.
+    // Ratings, Venues, splitRequests, and the locationShares/crew-messages
+    // subcollections are out of Milestone F1/F6's scope
+    // (docs/IMPLEMENTATION_PLAN.md) and are covered only by this catch-all
+    // until their own milestone adds real rules + tests for them.
     match /{document=**} {
       allow read, write: if false;
     }
