@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tablecrew/features/onboarding/presentation/otp_screen.dart';
+import 'package:tablecrew/features/onboarding/presentation/phone_entry_screen.dart';
 
 /// TableCrew's GoRouter route table — Milestone F3 ("Client foundation")
 /// deliverable per `docs/IMPLEMENTATION_PLAN.md`.
@@ -40,12 +42,20 @@ final GoRouter appRouter = GoRouter(
       name: 'splash',
       title: 'Splash / Launch Screen',
     ),
-    _stubRoute(
-      AppRoutes.phoneEntry,
+    // Milestone F5: real screens, replacing the F3 stubs — per this file's
+    // own "deleted route-by-route as each real screen replaces it"
+    // convention (see _StubScreen's doc comment below).
+    GoRoute(
+      path: AppRoutes.phoneEntry,
       name: 'phone-entry',
-      title: 'Phone Number Entry',
+      pageBuilder: (context, state) =>
+          _screenPage(const PhoneEntryScreen(), state),
     ),
-    _stubRoute(AppRoutes.otp, name: 'otp', title: 'OTP Verification'),
+    GoRoute(
+      path: AppRoutes.otp,
+      name: 'otp',
+      pageBuilder: (context, state) => _screenPage(const OtpScreen(), state),
+    ),
     _stubRoute(
       AppRoutes.dob,
       name: 'dob',
@@ -217,6 +227,31 @@ GoRoute _stubRoute(
     path: path,
     name: name,
     pageBuilder: (context, state) => _stubPage(title, state),
+  );
+}
+
+/// Builds a real screen's page with the same "unhurried" fade+slide
+/// transition [_stubPage] uses, so a stub's replacement doesn't change the
+/// route's motion — only [_stubPage]'s child-selection logic (a
+/// placeholder) differs from this (a real, caller-supplied [child]).
+CustomTransitionPage<void> _screenPage(Widget child, GoRouterState state) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved =
+          CurvedAnimation(parent: animation, curve: Curves.easeInOut);
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.05, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
   );
 }
 
