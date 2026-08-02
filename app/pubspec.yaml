@@ -134,6 +134,22 @@ dev_dependencies:
   # 1.0.5), re-pinned from the default `^1.0.5` caret to an exact version
   # per Recommendation R5, matching every other dependency in this file.
   mocktail: 1.0.5
+  # Milestone F5 task #96e: `image_picker`/`permission_handler` are used
+  # directly by `profile_setup_screen.dart`/`notification_priming_screen.dart`
+  # with no repository layer in front of them (unlike
+  # `connectivity_plus`/`firebase_auth`/Firestore, which all go through this
+  # codebase's repository pattern) — see `FakeImagePickerPlatform`'s doc
+  # comment (`test/fakes/`) for why. Both packages' real platform channel
+  # implementations throw under a plain `flutter test`, so their widget
+  # tests substitute a fake at each package's own `Platform.instance` seam
+  # instead, which requires importing these platform-interface packages
+  # directly — previously only resolved transitively (see them already
+  # present, at these exact versions, in `pubspec.lock`). Declared here
+  # rather than left transitive-only so `test/fakes/`'s imports resolve;
+  # versions match `pubspec.lock`'s already-resolved transitive pins
+  # exactly, not independently re-resolved.
+  image_picker_platform_interface: 2.11.1
+  permission_handler_platform_interface: 4.4.0
 
 # Milestone F0 note, resolved Milestone F2/F3/F5: this section used to list
 # which Firebase Flutter plugins were deliberately not yet pinned pending

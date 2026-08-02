@@ -5,9 +5,10 @@ import 'package:tablecrew/data/user_profile_repository.dart';
 /// Hand-written fake of [UserProfileRepository]
 /// (`app/lib/data/user_profile_repository.dart`) — `implements` the
 /// interface directly, touching no Firestore/Functions SDK type at all.
-/// Used by `AccountSetupController`'s tests (Milestone F5 task #96); the
-/// [watchPhotoModerationStatus] stream also exists for Screen 5's widget
-/// tests (task #117).
+/// Used by `AccountSetupController`'s tests (Milestone F5 task #96) and
+/// the onboarding screens' widget tests (task #96e), whose Screen 5 tests
+/// drive the [watchPhotoModerationStatus] stream via
+/// [emitModerationStatus].
 class FakeUserProfileRepository implements UserProfileRepository {
   /// What [hasCompletedProfile] returns, keyed by uid. A uid missing from
   /// this map is treated as "no profile" (`false`), the common case for a
