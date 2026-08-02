@@ -65,13 +65,10 @@ class OnboardingProfileDraft {
     return OnboardingProfileDraft(
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       displayName: displayName ?? this.displayName,
-      lastInitial: clearLastInitial
-          ? null
-          : lastInitial ?? this.lastInitial,
+      lastInitial: clearLastInitial ? null : lastInitial ?? this.lastInitial,
       bio: clearBio ? null : bio ?? this.bio,
-      photoUploadId: clearPhotoUploadId
-          ? null
-          : photoUploadId ?? this.photoUploadId,
+      photoUploadId:
+          clearPhotoUploadId ? null : photoUploadId ?? this.photoUploadId,
       interestTags: interestTags ?? this.interestTags,
     );
   }
@@ -81,8 +78,27 @@ class OnboardingProfileDraft {
 /// see the class doc comment on [OnboardingProfileDraft] for why a shared
 /// draft is needed at all.
 ///
+/// **`keepAlive: true`, not the `@riverpod` autoDispose default — a real
+/// bug found and fixed while writing this controller's tests (Milestone F5
+/// task #96), not a defensive-only change.** Every call site
+/// (`dob_entry_screen.dart`, `profile_setup_screen.dart`,
+/// `interests_screen.dart`, `account_setup_controller.dart`) only ever
+/// calls `ref.read(...)` on this provider, never `ref.watch(...)` —
+/// confirmed against Riverpod's own docs, `ref.read` doesn't register a
+/// listener, and an autoDispose provider with zero listeners for a full
+/// frame has its state destroyed. With no `keepAlive`, that means this
+/// controller was liable to be silently recreated back to
+/// [OnboardingProfileDraft.initial] between screens, discarding whatever
+/// had just been staged — plausibly on every real run, not as an edge
+/// case, since nothing anywhere establishes a watch. `keepAlive: true`
+/// matches `AccountSetupController`'s own stated reasoning for the same
+/// annotation: this state has to "stay readable ... after that screen is
+/// gone." [reset] already exists and is called once `completeAccountSetup`
+/// actually succeeds, so a stale draft from an abandoned attempt doesn't
+/// linger past a completed one.
+///
 /// Added Milestone F5.
-@riverpod
+@Riverpod(keepAlive: true)
 class OnboardingProfileDraftController
     extends _$OnboardingProfileDraftController {
   @override

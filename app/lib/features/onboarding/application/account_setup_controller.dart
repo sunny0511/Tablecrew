@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:tablecrew/data/connectivity_repository.dart';
 import 'package:tablecrew/data/user_profile_repository.dart';
 import 'package:tablecrew/features/onboarding/application/onboarding_profile_draft_controller.dart';
 
@@ -78,7 +78,7 @@ class AccountSetupState {
 /// Added Milestone F5.
 @Riverpod(keepAlive: true)
 class AccountSetupController extends _$AccountSetupController {
-  StreamSubscription<List<ConnectivityResult>>? _reconnectSubscription;
+  StreamSubscription<bool>? _reconnectSubscription;
 
   @override
   AccountSetupState build() {
@@ -94,11 +94,14 @@ class AccountSetupController extends _$AccountSetupController {
   Future<bool> submit() async {
     state = const AccountSetupState(status: AccountSetupStatus.submitting);
 
-    final connectivity = Connectivity();
-    final isOffline = _isOfflineResult(
-      await connectivity.checkConnectivity(),
-    );
-    if (isOffline) {
+    // Milestone F5 task #96: this used to construct `Connectivity()`
+    // directly, the same untestable-under-plain-`flutter test` pattern
+    // task #113 already fixed in the 4 screens that needed connectivity
+    // checks — this controller was missed in that pass and is reconciled
+    // to the same `ConnectivityRepository` wrapper here, so it can be
+    // driven by a fake in tests without touching a real platform channel.
+    final connectivity = ref.read(connectivityRepositoryProvider);
+    if (await connectivity.isOffline()) {
       state = const AccountSetupState(status: AccountSetupStatus.queued);
       _waitForReconnectThenRetry(connectivity);
       return true;
@@ -107,12 +110,10 @@ class AccountSetupController extends _$AccountSetupController {
     return _attempt();
   }
 
-  void _waitForReconnectThenRetry(Connectivity connectivity) {
+  void _waitForReconnectThenRetry(ConnectivityRepository connectivity) {
     unawaited(_reconnectSubscription?.cancel());
-    _reconnectSubscription = connectivity.onConnectivityChanged.listen((
-      results,
-    ) {
-      if (_isOfflineResult(results)) return;
+    _reconnectSubscription = connectivity.offlineChanges.listen((isOffline) {
+      if (isOffline) return;
       unawaited(_reconnectSubscription?.cancel());
       unawaited(_attempt());
     });
@@ -134,9 +135,7 @@ class AccountSetupController extends _$AccountSetupController {
 
     state = const AccountSetupState(status: AccountSetupStatus.submitting);
     try {
-      await ref
-          .read(userProfileRepositoryProvider)
-          .completeAccountSetup(
+      await ref.read(userProfileRepositoryProvider).completeAccountSetup(
             dateOfBirth: dateOfBirth,
             displayName: displayName,
             interestTags: draft.interestTags,
@@ -156,7 +155,4 @@ class AccountSetupController extends _$AccountSetupController {
       return false;
     }
   }
-
-  bool _isOfflineResult(List<ConnectivityResult> results) =>
-      results.isEmpty || results.every((r) => r == ConnectivityResult.none);
 }

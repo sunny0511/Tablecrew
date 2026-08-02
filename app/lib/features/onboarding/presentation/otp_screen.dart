@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:pinput/pinput.dart';
 import 'package:tablecrew/core/theme/spacing_tokens.dart';
 import 'package:tablecrew/core/theme/type_tokens.dart';
+import 'package:tablecrew/data/connectivity_repository.dart';
 import 'package:tablecrew/data/user_profile_repository.dart';
 import 'package:tablecrew/features/onboarding/application/onboarding_phone_flow_controller.dart';
 import 'package:tablecrew/widgets/skeleton_pulse.dart';
@@ -37,7 +37,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   bool _isOffline = false;
   String? _pendingOfflineCode;
   Timer? _uiTicker;
-  StreamSubscription<List<ConnectivityResult>>? _reconnectSubscription;
+  StreamSubscription<bool>? _reconnectSubscription;
 
   @override
   void dispose() {
@@ -58,8 +58,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   }
 
   Future<void> _onCompleted(String code) async {
-    final connectivity = Connectivity();
-    if (_isOfflineResult(await connectivity.checkConnectivity())) {
+    final connectivity = ref.read(connectivityRepositoryProvider);
+    if (await connectivity.isOffline()) {
+      if (!mounted) return;
       setState(() {
         _isOffline = true;
         _pendingOfflineCode = code;
@@ -70,14 +71,12 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     await _confirm(code);
   }
 
-  void _waitForReconnectThenConfirm(Connectivity connectivity) {
+  void _waitForReconnectThenConfirm(ConnectivityRepository connectivity) {
     unawaited(_reconnectSubscription?.cancel());
     final deadline = DateTime.now().add(const Duration(seconds: 60));
-    _reconnectSubscription = connectivity.onConnectivityChanged.listen((
-      results,
-    ) {
+    _reconnectSubscription = connectivity.offlineChanges.listen((isOffline) {
       final code = _pendingOfflineCode;
-      if (!mounted || _isOfflineResult(results) || code == null) return;
+      if (!mounted || isOffline || code == null) return;
       unawaited(_reconnectSubscription?.cancel());
       setState(() => _isOffline = false);
       unawaited(_confirm(code));
@@ -88,9 +87,6 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       if (mounted) setState(() => _isOffline = false);
     });
   }
-
-  bool _isOfflineResult(List<ConnectivityResult> results) =>
-      results.isEmpty || results.every((r) => r == ConnectivityResult.none);
 
   Future<void> _confirm(String code) async {
     final controller = ref.read(onboardingPhoneFlowControllerProvider.notifier);
@@ -106,9 +102,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
     final uid = state.credential?.user?.uid;
     if (uid == null) return;
-    final hasProfile = await ref
-        .read(userProfileRepositoryProvider)
-        .hasCompletedProfile(uid);
+    final hasProfile =
+        await ref.read(userProfileRepositoryProvider).hasCompletedProfile(uid);
     if (!mounted) return;
     if (hasProfile) {
       context.goNamed('home');
@@ -200,8 +195,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                     autofocus: true,
                     defaultPinTheme: defaultPinTheme,
                     errorPinTheme: errorPinTheme,
-                    forceErrorState:
-                        flowState.status ==
+                    forceErrorState: flowState.status ==
                         OnboardingPhoneFlowStatus.confirmFailed,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     // pinput 6.0.2 (the real `flutter pub add`-resolved

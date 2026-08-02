@@ -1,12 +1,12 @@
 import 'dart:async';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
 import 'package:tablecrew/core/theme/spacing_tokens.dart';
 import 'package:tablecrew/core/theme/type_tokens.dart';
+import 'package:tablecrew/data/connectivity_repository.dart';
 import 'package:tablecrew/features/onboarding/application/onboarding_phone_flow_controller.dart';
 import 'package:tablecrew/features/onboarding/data/phone_send_rate_tracker.dart';
 import 'package:tablecrew/widgets/skeleton_pulse.dart';
@@ -35,7 +35,7 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
   bool _isOffline = false;
   DateTime? _cooldownUntil;
   Timer? _uiTicker;
-  StreamSubscription<List<ConnectivityResult>>? _reconnectSubscription;
+  StreamSubscription<bool>? _reconnectSubscription;
 
   @override
   void dispose() {
@@ -48,8 +48,9 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
     final phoneNumber = _completeNumber;
     if (phoneNumber == null || !_numberIsValid) return;
 
-    final connectivity = Connectivity();
-    if (_isOfflineResult(await connectivity.checkConnectivity())) {
+    final connectivity = ref.read(connectivityRepositoryProvider);
+    if (await connectivity.isOffline()) {
+      if (!mounted) return;
       setState(() => _isOffline = true);
       _waitForReconnectThenSend(phoneNumber, connectivity);
       return;
@@ -65,14 +66,12 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
   /// fresh connectivity check blocking the tap.
   void _waitForReconnectThenSend(
     String phoneNumber,
-    Connectivity connectivity,
+    ConnectivityRepository connectivity,
   ) {
     unawaited(_reconnectSubscription?.cancel());
     final deadline = DateTime.now().add(const Duration(seconds: 60));
-    _reconnectSubscription = connectivity.onConnectivityChanged.listen((
-      results,
-    ) {
-      if (!mounted || _isOfflineResult(results)) return;
+    _reconnectSubscription = connectivity.offlineChanges.listen((isOffline) {
+      if (!mounted || isOffline) return;
       unawaited(_reconnectSubscription?.cancel());
       setState(() => _isOffline = false);
       unawaited(_attemptSend(phoneNumber));
@@ -84,9 +83,6 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
       if (mounted) setState(() => _isOffline = false);
     });
   }
-
-  bool _isOfflineResult(List<ConnectivityResult> results) =>
-      results.isEmpty || results.every((r) => r == ConnectivityResult.none);
 
   int _cooldownMinutesRemaining() {
     return _cooldownUntil!.difference(DateTime.now()).inMinutes + 1;
@@ -181,8 +177,7 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
                 )
               else if (isCoolingDown)
                 _InlineNotice(
-                  message:
-                      'Too many attempts — try again in '
+                  message: 'Too many attempts — try again in '
                       '${_cooldownMinutesRemaining()} min.',
                   color: colors.error,
                 )

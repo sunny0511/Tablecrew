@@ -46,9 +46,8 @@ class _InterestsScreenState extends ConsumerState<InterestsScreen> {
         .read(onboardingProfileDraftControllerProvider.notifier)
         .setInterestTags(_selected.toList());
 
-    final proceed = await ref
-        .read(accountSetupControllerProvider.notifier)
-        .submit();
+    final proceed =
+        await ref.read(accountSetupControllerProvider.notifier).submit();
     if (!mounted) return;
 
     if (proceed) {
@@ -71,8 +70,7 @@ class _InterestsScreenState extends ConsumerState<InterestsScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final setupState = ref.watch(accountSetupControllerProvider);
-    final isSubmitting =
-        setupState.status == AccountSetupStatus.submitting ||
+    final isSubmitting = setupState.status == AccountSetupStatus.submitting ||
         setupState.status == AccountSetupStatus.queued;
     final canContinue = _selected.length >= kMinInterestTags && !isSubmitting;
 
@@ -126,7 +124,7 @@ class _InterestsScreenState extends ConsumerState<InterestsScreen> {
                   _selected.length >= kMinInterestTags
                       ? '${_selected.length} selected'
                       : 'Pick at least $kMinInterestTags to continue '
-                            '(${_selected.length} selected)',
+                          '(${_selected.length} selected)',
                   style: TCTextStyles.bodyMd.copyWith(
                     color: colors.onSurfaceVariant,
                   ),

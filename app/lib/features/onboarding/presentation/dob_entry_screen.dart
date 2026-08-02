@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tablecrew/core/theme/spacing_tokens.dart';
 import 'package:tablecrew/core/theme/type_tokens.dart';
+import 'package:tablecrew/data/connectivity_repository.dart';
 import 'package:tablecrew/data/user_profile_repository.dart';
 import 'package:tablecrew/features/onboarding/application/onboarding_profile_draft_controller.dart';
 import 'package:tablecrew/widgets/skeleton_pulse.dart';
@@ -14,8 +14,18 @@ import 'package:tablecrew/widgets/skeleton_pulse.dart';
 const _minAgeYears = 18;
 const _maxAgeYears = 120;
 const _monthAbbreviations = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 /// Screen 4 (Date of Birth Entry / Age Gate),
@@ -47,18 +57,18 @@ class _DobEntryScreenState extends ConsumerState<DobEntryScreen> {
   bool _isValidating = false;
   bool _isOffline = false;
   String? _error;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<bool>? _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
-    final connectivity = Connectivity();
+    final connectivity = ref.read(connectivityRepositoryProvider);
     unawaited(_checkInitialConnectivity(connectivity));
-    _connectivitySubscription = connectivity.onConnectivityChanged.listen((
-      results,
+    _connectivitySubscription = connectivity.offlineChanges.listen((
+      isOffline,
     ) {
       if (!mounted) return;
-      setState(() => _isOffline = _isOfflineResult(results));
+      setState(() => _isOffline = isOffline);
     });
   }
 
@@ -68,14 +78,13 @@ class _DobEntryScreenState extends ConsumerState<DobEntryScreen> {
     super.dispose();
   }
 
-  Future<void> _checkInitialConnectivity(Connectivity connectivity) async {
-    final result = await connectivity.checkConnectivity();
+  Future<void> _checkInitialConnectivity(
+    ConnectivityRepository connectivity,
+  ) async {
+    final isOffline = await connectivity.isOffline();
     if (!mounted) return;
-    setState(() => _isOffline = _isOfflineResult(result));
+    setState(() => _isOffline = isOffline);
   }
-
-  bool _isOfflineResult(List<ConnectivityResult> results) =>
-      results.isEmpty || results.every((r) => r == ConnectivityResult.none);
 
   Future<void> _pickDate() async {
     final now = DateTime.now();

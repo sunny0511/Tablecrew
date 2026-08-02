@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +10,7 @@ import 'package:tablecrew/core/auth_state.dart';
 import 'package:tablecrew/core/theme/color_tokens.dart';
 import 'package:tablecrew/core/theme/spacing_tokens.dart';
 import 'package:tablecrew/core/theme/type_tokens.dart';
+import 'package:tablecrew/data/connectivity_repository.dart';
 import 'package:tablecrew/data/photo_upload_repository.dart';
 import 'package:tablecrew/data/user_profile_repository.dart';
 import 'package:tablecrew/features/onboarding/application/onboarding_profile_draft_controller.dart';
@@ -90,8 +90,7 @@ class ProfileSetupScreen extends ConsumerStatefulWidget {
   const ProfileSetupScreen({super.key});
 
   @override
-  ConsumerState<ProfileSetupScreen> createState() =>
-      _ProfileSetupScreenState();
+  ConsumerState<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
 }
 
 class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
@@ -105,7 +104,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   String? _photoErrorMessage;
 
   bool _isOffline = false;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<bool>? _connectivitySubscription;
   StreamSubscription<PhotoModerationStatus>? _moderationSubscription;
 
   @override
@@ -116,9 +115,9 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     _lastInitialController.text = draft.lastInitial ?? '';
     _bioController.text = draft.bio ?? '';
 
-    final connectivity = Connectivity();
+    final connectivity = ref.read(connectivityRepositoryProvider);
     unawaited(_checkInitialConnectivity(connectivity));
-    _connectivitySubscription = connectivity.onConnectivityChanged.listen(
+    _connectivitySubscription = connectivity.offlineChanges.listen(
       _onConnectivityChanged,
     );
 
@@ -137,16 +136,17 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     super.dispose();
   }
 
-  Future<void> _checkInitialConnectivity(Connectivity connectivity) async {
-    final result = await connectivity.checkConnectivity();
+  Future<void> _checkInitialConnectivity(
+    ConnectivityRepository connectivity,
+  ) async {
+    final isOffline = await connectivity.isOffline();
     if (!mounted) return;
-    setState(() => _isOffline = _isOfflineResult(result));
+    setState(() => _isOffline = isOffline);
   }
 
-  void _onConnectivityChanged(List<ConnectivityResult> results) {
+  void _onConnectivityChanged(bool isOffline) {
     if (!mounted) return;
     final wasOffline = _isOffline;
-    final isOffline = _isOfflineResult(results);
     setState(() => _isOffline = isOffline);
     final bytes = _photoBytes;
     final contentType = _contentType;
@@ -158,9 +158,6 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       unawaited(_upload(bytes, contentType));
     }
   }
-
-  bool _isOfflineResult(List<ConnectivityResult> results) =>
-      results.isEmpty || results.every((r) => r == ConnectivityResult.none);
 
   void _syncDraft() {
     final lastInitial = _lastInitialController.text.trim();
@@ -267,24 +264,24 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         .read(userProfileRepositoryProvider)
         .watchPhotoModerationStatus(uid: uid, uploadId: uploadId)
         .listen((status) {
-          if (!mounted) return;
-          switch (status) {
-            case PhotoModerationPending():
-              break;
-            case PhotoModerationApproved():
-              ref
-                  .read(onboardingProfileDraftControllerProvider.notifier)
-                  .setPhotoUploadId(uploadId);
-              setState(() => _photoState = _PhotoState.approved);
-            case PhotoModerationFlagged():
-              setState(() {
-                _photoState = _PhotoState.flagged;
-                _photoErrorMessage =
-                    "That photo didn't pass our review — try another.";
-                _photoBytes = null;
-              });
-          }
-        });
+      if (!mounted) return;
+      switch (status) {
+        case PhotoModerationPending():
+          break;
+        case PhotoModerationApproved():
+          ref
+              .read(onboardingProfileDraftControllerProvider.notifier)
+              .setPhotoUploadId(uploadId);
+          setState(() => _photoState = _PhotoState.approved);
+        case PhotoModerationFlagged():
+          setState(() {
+            _photoState = _PhotoState.flagged;
+            _photoErrorMessage =
+                "That photo didn't pass our review — try another.";
+            _photoBytes = null;
+          });
+      }
+    });
   }
 
   bool get _canContinue {
@@ -380,8 +377,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   }
 
   Widget _buildPhotoTile(ColorScheme colors) {
-    final isBusy =
-        _photoState == _PhotoState.uploading ||
+    final isBusy = _photoState == _PhotoState.uploading ||
         _photoState == _PhotoState.reviewing;
 
     if (isBusy) {

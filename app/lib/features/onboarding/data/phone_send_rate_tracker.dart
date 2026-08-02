@@ -62,9 +62,13 @@ class PhoneSendRateTracker {
   List<DateTime> _attemptsInWindow(String phoneNumber, {DateTime? now}) {
     final cutoff = (now ?? DateTime.now()).subtract(_window);
     final raw = _prefs.getStringList(_key(phoneNumber)) ?? const <String>[];
-    final parsed = raw.map(DateTime.tryParse).whereType<DateTime>().where(
+    final parsed = raw
+        .map(DateTime.tryParse)
+        .whereType<DateTime>()
+        .where(
           (t) => t.isAfter(cutoff),
-        ).toList()
+        )
+        .toList()
       ..sort();
     return parsed;
   }

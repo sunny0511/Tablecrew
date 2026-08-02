@@ -55,8 +55,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.splash,
       name: 'splash',
-      pageBuilder: (context, state) =>
-          _screenPage(const SplashScreen(), state),
+      pageBuilder: (context, state) => _screenPage(const SplashScreen(), state),
     ),
     GoRoute(
       path: AppRoutes.phoneEntry,

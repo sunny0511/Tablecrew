@@ -148,9 +148,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                   child: Text(
                     'TableCrew',
                     style: TCTextStyles.displayLg.copyWith(
-                      color: isDark
-                          ? TCColors.darkOnSurface
-                          : TCColors.ink900,
+                      color: isDark ? TCColors.darkOnSurface : TCColors.ink900,
                     ),
                   ),
                 ),

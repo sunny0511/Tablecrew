@@ -89,22 +89,19 @@ class PhotoModerationFlagged extends PhotoModerationStatus {
 /// (Splash)'s routing and onboarding both need it, and Settings/Profile
 /// (later milestones) will too.
 ///
-/// Added Milestone F5.
-class UserProfileRepository {
-  /// Creates a repository over the given [firestore]/[functions] instances,
-  /// defaulting to the app's real Firebase instances — the constructor
-  /// parameters exist so tests can inject fakes instead
-  /// (docs/ENGINEERING_GUIDELINES.md: "swap in a fake repository, never hit
-  /// the emulator or production for a unit test").
-  UserProfileRepository({
-    FirebaseFirestore? firestore,
-    FirebaseFunctions? functions,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _functions = functions ?? FirebaseFunctions.instance;
-
-  final FirebaseFirestore _firestore;
-  final FirebaseFunctions _functions;
-
+/// **An `abstract interface class`, not a concrete class, as of Milestone
+/// F5 task #96** — the same treatment
+/// `features/onboarding/data/phone_auth_repository.dart`'s
+/// `PhoneAuthRepository` got, and for the identical reason: `firestore ??
+/// FirebaseFirestore.instance` / `functions ?? FirebaseFunctions.instance`
+/// are evaluated in the constructor's initializer list, so even a subclass
+/// overriding every method still pays for that real-Firebase lookup at
+/// construction time, which throws under a plain `flutter test` with no
+/// `Firebase.initializeApp()` call. Splitting the public contract (this
+/// interface) from the real implementation
+/// ([FirebaseUserProfileRepository], below) lets a hand-written test fake
+/// `implements` the interface directly, touching no Firebase type at all.
+abstract interface class UserProfileRepository {
   /// Whether `users/{uid}` (the public profile document) already exists —
   /// the exact "has this account completed onboarding" check Screen 1
   /// (Splash)'s routing logic needs (docs/SCREEN_SPECIFICATIONS.md Screen 1:
@@ -112,22 +109,13 @@ class UserProfileRepository {
   /// authenticated and complete → Home"). `completeAccountSetup` is the
   /// only path that ever creates this document (docs/API_SPEC.md §3.9), so
   /// its existence is a reliable completeness signal, not a heuristic.
-  Future<bool> hasCompletedProfile(String uid) async {
-    final doc = await _firestore.doc('users/$uid').get();
-    return doc.exists;
-  }
+  Future<bool> hasCompletedProfile(String uid);
 
   /// docs/API_SPEC.md §3.9 — Screen 4 (Date of Birth Entry)'s "Continue"
   /// round trip. A UX convenience only; the real enforcement happens
   /// server-side again inside [completeAccountSetup], never trusted from
   /// this call alone (docs/SECURITY.md's age-gating section).
-  Future<bool> validateAge(DateTime dateOfBirth) async {
-    final callable = _functions.httpsCallable('validateAge');
-    final result = await callable.call<Map<String, dynamic>>(
-      <String, dynamic>{'dateOfBirth': _formatIsoDate(dateOfBirth)},
-    );
-    return result.data['eligible'] as bool;
-  }
+  Future<bool> validateAge(DateTime dateOfBirth);
 
   /// docs/API_SPEC.md §3.9 — the combined write backing Screens 5 and 6
   /// (Profile Setup, Interest Selection). [photoUploadId], if given, must
@@ -137,6 +125,60 @@ class UserProfileRepository {
   /// itself and throws `PHOTO_NOT_APPROVED` otherwise. This method never
   /// takes or sends a raw photo URL string, matching that corrected
   /// contract (see CHANGELOG.md's "F5 kickoff" entry).
+  Future<CompleteAccountSetupResult> completeAccountSetup({
+    required DateTime dateOfBirth,
+    required String displayName,
+    required List<String> interestTags,
+    required String locale,
+    String? photoUploadId,
+    String? bio,
+  });
+
+  /// Listens to a photo upload's moderation verdict
+  /// (`users/{uid}/private/photoModeration/{uploadId}`, docs/DATABASE.md
+  /// §3.1a) — Screen 5's "Continue" button watches this to know when a
+  /// clean verdict lands, per its corrected Loading States
+  /// (docs/SCREEN_SPECIFICATIONS.md Screen 5). Firestore rules restrict
+  /// this document to owner-only reads (docs/DATABASE.md §6), so this only
+  /// ever resolves for the signed-in user's own uploads.
+  Stream<PhotoModerationStatus> watchPhotoModerationStatus({
+    required String uid,
+    required String uploadId,
+  });
+}
+
+/// The real, Firebase-backed [UserProfileRepository] — see that interface's
+/// doc comment for why the split exists.
+///
+/// Added Milestone F5.
+class FirebaseUserProfileRepository implements UserProfileRepository {
+  /// Creates a repository over the given [firestore]/[functions] instances,
+  /// defaulting to the app's real Firebase instances.
+  FirebaseUserProfileRepository({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _functions = functions ?? FirebaseFunctions.instance;
+
+  final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
+
+  @override
+  Future<bool> hasCompletedProfile(String uid) async {
+    final doc = await _firestore.doc('users/$uid').get();
+    return doc.exists;
+  }
+
+  @override
+  Future<bool> validateAge(DateTime dateOfBirth) async {
+    final callable = _functions.httpsCallable('validateAge');
+    final result = await callable.call<Map<String, dynamic>>(
+      <String, dynamic>{'dateOfBirth': _formatIsoDate(dateOfBirth)},
+    );
+    return result.data['eligible'] as bool;
+  }
+
+  @override
   Future<CompleteAccountSetupResult> completeAccountSetup({
     required DateTime dateOfBirth,
     required String displayName,
@@ -167,13 +209,7 @@ class UserProfileRepository {
     }
   }
 
-  /// Listens to a photo upload's moderation verdict
-  /// (`users/{uid}/private/photoModeration/{uploadId}`, docs/DATABASE.md
-  /// §3.1a) — Screen 5's "Continue" button watches this to know when a
-  /// clean verdict lands, per its corrected Loading States
-  /// (docs/SCREEN_SPECIFICATIONS.md Screen 5). Firestore rules restrict
-  /// this document to owner-only reads (docs/DATABASE.md §6), so this only
-  /// ever resolves for the signed-in user's own uploads.
+  @override
   Stream<PhotoModerationStatus> watchPhotoModerationStatus({
     required String uid,
     required String uploadId,
@@ -230,4 +266,5 @@ class UserProfileRepository {
 /// Riverpod provider (docs/ENGINEERING_GUIDELINES.md: "Repositories ...
 /// exposed as providers so they're trivially overridable in tests").
 @riverpod
-UserProfileRepository userProfileRepository(Ref ref) => UserProfileRepository();
+UserProfileRepository userProfileRepository(Ref ref) =>
+    FirebaseUserProfileRepository();

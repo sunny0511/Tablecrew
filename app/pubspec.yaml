@@ -118,6 +118,22 @@ dev_dependencies:
   # exact version, matching every other dependency in this file per
   # Recommendation R5's "pin exact versions" policy.
   alchemist: 0.14.0
+  # Milestone F5 task #96: hand-written fakes implement each repository's
+  # `abstract interface class` directly (see
+  # `features/onboarding/data/phone_auth_repository.dart`'s doc comment for
+  # why the interface/impl split exists), but two of `firebase_auth`'s own
+  # leaf return types — `UserCredential`/`User` — have no public
+  # constructor at all (confirmed via pub.dev's real API docs, not
+  # assumed), so no hand-written fake can produce one by construction.
+  # `mocktail`'s `Mock` base class sidesteps this by routing through
+  # `noSuchMethod` instead of a real constructor — the standard,
+  # widely-documented pattern for exactly this problem. Used narrowly, only
+  # to stand in for those two leaf SDK types inside `test/fakes/`; the
+  # repositories themselves stay hand-written fakes, not mocktail mocks.
+  # Added via `flutter pub add --dev mocktail` (real resolver — resolved to
+  # 1.0.5), re-pinned from the default `^1.0.5` caret to an exact version
+  # per Recommendation R5, matching every other dependency in this file.
+  mocktail: 1.0.5
 
 # Milestone F0 note, resolved Milestone F2/F3/F5: this section used to list
 # which Firebase Flutter plugins were deliberately not yet pinned pending
