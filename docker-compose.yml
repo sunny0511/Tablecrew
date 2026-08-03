@@ -1,0 +1,29 @@
+# Local development Typesense instance (docs/ARCHITECTURE.md §5.5,
+# docs/adr/0002-typesense-over-algolia.md), closing the "no local/CI
+# emulation story" gap docs/IMPLEMENTATION_PLAN.md §2.2 names as a real
+# Foundation blocker. Milestone F7.
+#
+# This is NOT a Typesense Cloud account, and needs none — it runs the
+# official open-source Typesense Docker image entirely locally, the same
+# image `.github/workflows/ci.yml`'s Typesense-dependent test job uses as a
+# GitHub Actions service container, so dev and CI exercise identical
+# server behavior.
+#
+# Usage: `docker compose up -d typesense` from the repo root, then run
+# `functions`'s Typesense-dependent tests (see
+# functions/test/integration/typesense.integration.test.ts's own header)
+# against it. `functions/src/shared/typesense.ts`'s `FUNCTIONS_EMULATOR`
+# branch already defaults to this container's host/port/API key with no
+# further configuration needed.
+services:
+  typesense:
+    image: typesense/typesense:27.1
+    restart: unless-stopped
+    ports:
+      - "8108:8108"
+    volumes:
+      - typesense-data:/data
+    command: "--data-dir /data --api-key=tablecrew-local-dev-key --enable-cors"
+
+volumes:
+  typesense-data:
