@@ -105,6 +105,36 @@ test('requestSeat: an open Table under capacity confirms immediately', async () 
   assert.equal(tableSnap.data()!.capacity.confirmedCount, 1);
 });
 
+test('requestSeat: BLOCKED_BY_HOST when the caller is on the host\'s block list', async () => {
+  // Milestone F7: this check was deferred from F4 (blockUser didn't exist
+  // yet) and is real as of F6's Trust & Safety chunk — see
+  // functions/src/tables/index.ts's Milestone F7 addendum.
+  const hostUid = 'itest-tbl-blocked-host';
+  const guestUid = 'itest-tbl-blocked-guest';
+  await seedUserProfile(hostUid);
+  await seedUserProfile(guestUid);
+  const hostToken = await getIdTokenForUid(hostUid, '+911234510025');
+  const guestToken = await getIdTokenForUid(guestUid, '+911234510026');
+
+  await callCallable('blockUser', {targetUserId: guestUid}, hostToken);
+
+  const created = await callCallable<{tableId: string}>(
+      'createTable', baseTablePayload({visibility: 'open', capacity: {min: 2, max: 2}}), hostToken,
+  );
+  const tableId = created.body.result!.tableId;
+
+  const res = await callCallable(
+      'requestSeat', {tableId, idempotencyKey: crypto.randomUUID()}, guestToken,
+  );
+  assert.equal(res.status, 403);
+  const details = res.body.error?.details as {code?: string} | undefined;
+  assert.equal(details?.code, 'BLOCKED_BY_HOST');
+
+  const db = getFirestore();
+  const tableSnap = await db.doc(`tables/${tableId}`).get();
+  assert.equal(tableSnap.data()!.capacity.confirmedCount, 0);
+});
+
 test('requestSeat: a closed Table always lands in "requested", not auto-confirmed', async () => {
   const hostUid = 'itest-tbl-closed-host';
   const guestUid = 'itest-tbl-closed-guest';

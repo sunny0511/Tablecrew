@@ -4,6 +4,11 @@
  *
  * Milestone F4 — implemented for real, replacing the F0 scaffold.
  *
+ * Milestone F7 addendum: `requestSeat`'s blocked-user check (see that
+ * function's own inline comment) was deferred at F4 because `blockUser`
+ * didn't exist yet; it's real as of F6's Trust & Safety chunk landing.
+ *
+
  * Scope note, disclosed rather than silently expanded: this milestone is
  * "Core API surface: Tables & Crews" per docs/IMPLEMENTATION_PLAN.md, not
  * Discover/notifications/Trust & Safety. Concretely, that means:
@@ -13,10 +18,6 @@
  *   exist anywhere in this codebase yet. The Firestore `status` write
  *   itself is real and correct; the two downstream side effects are a
  *   disclosed gap, not a silent omission, tracked in TASKS.md.
- * - `requestSeat`'s blocked-user check ("a blocked user cannot requestSeat
- *   on the blocker's Tables") is NOT implemented — `blockUser` itself is a
- *   Milestone F6 (Trust & Safety) deliverable; `blockedUserIds` exists on
- *   the schema but nothing populates it yet.
  * - `SEAT_REQUEST_CONTENTION` detection (transaction retry-budget
  *   exhaustion) is a best-effort mapping based on the Admin SDK's gRPC
  *   ABORTED status code — unverified against a real emulator, since I
@@ -415,6 +416,29 @@ export const requestSeat = onCall<RequestSeatRequest>(
                   throw new HttpsError('failed-precondition', 'Table not accepting RSVPs.', {
                     code: 'TABLE_NOT_ACCEPTING_RSVPS',
                     message: 'This Table is no longer accepting RSVPs.',
+                  });
+                }
+
+                // docs/API_SPEC.md §3.1 requestSeat's Abuse Prevention note:
+                // "blocked users ... cannot requestSeat on a Table hosted by
+                // someone who has blocked them — checked via the target
+                // host's block list." Deferred from Milestone F4 (blockUser
+                // didn't exist yet); now real. Read inside this transaction
+                // (not the earlier, non-transactional profile-snapshot read
+                // above) since it depends on `table.hostId`, only known once
+                // tableSnap has been read. Per docs/SECURITY.md's "blocking
+                // is ... silent — the blocked user is never notified,"
+                // the rejection message deliberately doesn't say the word
+                // "blocked" — it reads the same as any other Table a caller
+                // simply isn't allowed to join.
+                const hostPrivateSnap =
+                  await tx.get(db.doc(`users/${table.hostId as string}/private/profile`));
+                const hostBlockedUserIds =
+                  (hostPrivateSnap.data()?.blockedUserIds as string[] | undefined) ?? [];
+                if (hostBlockedUserIds.includes(uid)) {
+                  throw new HttpsError('permission-denied', 'You cannot request a seat on this Table.', {
+                    code: 'BLOCKED_BY_HOST',
+                    message: 'You cannot request a seat on this Table.',
                   });
                 }
 
