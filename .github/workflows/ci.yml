@@ -146,6 +146,56 @@ jobs:
             "npm --prefix firestore/test/rules test" \
             --project tablecrew-dev
 
+  # --- Typesense sync trigger integration test (Milestone F7) ----------------
+  #
+  # Separate from "Stage 3" above and from a hypothetical "Stage 5"
+  # functions-integration job (functions/test/integration/'s suite isn't
+  # wired into CI at all yet - a pre-existing, disclosed gap, not something
+  # this job's addition silently expands to cover). This job exists
+  # specifically to close docs/IMPLEMENTATION_PLAN.md §2.2's named
+  # blocker ("Typesense has no local/CI emulation story") for the one
+  # piece of code that needs it: functions/src/triggers/index.ts's
+  # onTableWrittenSyncTypesense trigger. The `typesense/typesense` image
+  # below is the same open-source Docker image docker-compose.yml runs
+  # for local dev - no Typesense Cloud account is used or needed here.
+  typesense-integration-tests:
+    name: "Typesense sync trigger · Integration test"
+    runs-on: ubuntu-latest
+    services:
+      typesense:
+        image: typesense/typesense:27.1
+        ports:
+          - 8108:8108
+        options: >-
+          --health-cmd "curl -f http://localhost:8108/health || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        env:
+          TYPESENSE_API_KEY: tablecrew-local-dev-key
+          TYPESENSE_DATA_DIR: /tmp/typesense-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: functions/package.json
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@13
+      - name: Install dependencies
+        working-directory: functions
+        run: npm ci
+      - name: Run the Typesense sync integration test against the emulators + service container
+        env:
+          TYPESENSE_HOST: localhost
+          TYPESENSE_PORT: "8108"
+          TYPESENSE_API_KEY: tablecrew-local-dev-key
+        run: |
+          firebase emulators:exec --only auth,firestore,functions \
+            "npm --prefix functions run test:integration:typesense" \
+            --project tablecrew-dev
+
   # --- Stage 4: Build ---------------------------------------------------------
 
   build-functions:
