@@ -36,6 +36,7 @@ export * from './shared';
 export * from './triggers';
 export * from './users';
 export * from './media';
+export * from './identity';
 
 /**
  * Temporary scaffold-verification endpoint. Delete once the first real
