@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:tablecrew/data/identity_upload_repository.dart';
 import 'package:tablecrew/data/identity_verification_repository.dart';
 import 'package:tablecrew/features/identity/application/identity_verification_controller.dart';
@@ -82,18 +82,18 @@ void main() {
     expect(state().errorCode, 'RATE_LIMITED');
   });
 
-  test(
-      'REVIEW_ALREADY_PENDING adopts the open submission instead of erroring',
+  test('REVIEW_ALREADY_PENDING adopts the open submission instead of erroring',
       () async {
     // The recovery path that exists because the client can lose the id:
     // this is not a failure the user can act on, it means a review they
     // already started is still open.
     captureBoth();
-    verification.submitError = const IdentityCallableException(
-      code: 'REVIEW_ALREADY_PENDING',
-      message: 'A review is already pending.',
-    );
-    verification.pendingSubmissionId = 'submission-open';
+    verification
+      ..submitError = const IdentityCallableException(
+        code: 'REVIEW_ALREADY_PENDING',
+        message: 'A review is already pending.',
+      )
+      ..pendingSubmissionId = 'submission-open';
 
     final ok = await controller().submit('alice');
 
@@ -103,15 +103,15 @@ void main() {
     expect(state().errorCode, isNull);
   });
 
-  test(
-      'REVIEW_ALREADY_PENDING with no recoverable id falls back to an error',
+  test('REVIEW_ALREADY_PENDING with no recoverable id falls back to an error',
       () async {
     captureBoth();
-    verification.submitError = const IdentityCallableException(
-      code: 'REVIEW_ALREADY_PENDING',
-      message: 'A review is already pending.',
-    );
-    verification.pendingSubmissionId = null;
+    verification
+      ..submitError = const IdentityCallableException(
+        code: 'REVIEW_ALREADY_PENDING',
+        message: 'A review is already pending.',
+      )
+      ..pendingSubmissionId = null;
 
     expect(await controller().submit('alice'), isFalse);
     expect(state().status, IdentitySubmitStatus.failed);

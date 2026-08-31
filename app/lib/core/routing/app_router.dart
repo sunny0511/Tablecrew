@@ -193,7 +193,7 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.identityVerification,
       name: 'identity-verification',
       pageBuilder: (context, state) =>
-          _screenPage(const IdentityVerificationScreen()),
+          _screenPage(const IdentityVerificationScreen(), state),
     ),
     GoRoute(
       path: AppRoutes.report,
@@ -300,6 +300,7 @@ abstract final class AppRoutes {
   /// Screen 8 — Tier 2 identity verification (Milestone F7, ADR 0007).
   static const identityVerification = '/identity-verification';
 
+  /// Screen 27 — Report Flow.
   static const report = '/report';
 
   /// Screen 28.

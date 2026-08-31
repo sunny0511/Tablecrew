@@ -61,8 +61,7 @@ class _IdentityVerificationScreenState
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: ImageSource.camera,
-      preferredCameraDevice:
-          isSelfie ? CameraDevice.front : CameraDevice.rear,
+      preferredCameraDevice: isSelfie ? CameraDevice.front : CameraDevice.rear,
     );
     if (picked == null || !mounted) return;
     final bytes = await picked.readAsBytes();
@@ -80,9 +79,7 @@ class _IdentityVerificationScreenState
   Future<void> _submit() async {
     final uid = ref.read(currentUidProvider);
     if (uid == null) return;
-    await ref
-        .read(identityVerificationControllerProvider.notifier)
-        .submit(uid);
+    await ref.read(identityVerificationControllerProvider.notifier).submit(uid);
   }
 
   @override
@@ -116,13 +113,13 @@ class _RestoringView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Padding(
-      padding: EdgeInsets.all(SpacingTokens.lg),
+      padding: EdgeInsets.all(TCSpacing.lg),
       // Skeleton pulse, never a spinner (docs/DESIGN_SYSTEM.md §8).
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SkeletonPulse(width: double.infinity, height: 28),
-          SizedBox(height: SpacingTokens.md),
+          SizedBox(height: TCSpacing.md),
           SkeletonPulse(width: double.infinity, height: 120),
         ],
       ),
@@ -152,33 +149,35 @@ class _CaptureView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(SpacingTokens.lg),
+      padding: const EdgeInsets.all(TCSpacing.lg),
       children: [
-        Text("Let's verify it's really you",
-            style: theme.textTheme.headlineSmall),
-        const SizedBox(height: SpacingTokens.sm),
+        Text(
+          "Let's verify it's really you",
+          style: theme.textTheme.headlineSmall,
+        ),
+        const SizedBox(height: TCSpacing.sm),
         Text(
           'A real person on our team checks your ID against your selfie. '
           'This confirms your identity so Discover stays real — it is not '
           'a background check.',
           style: theme.textTheme.bodyMedium,
         ),
-        const SizedBox(height: SpacingTokens.sm),
+        const SizedBox(height: TCSpacing.sm),
         Text(
           "Reviews usually take a day or so. We'll let you know here as "
           'soon as it is done — you can close the app in the meantime.',
           style: theme.textTheme.bodySmall,
         ),
-        const SizedBox(height: SpacingTokens.lg),
+        const SizedBox(height: TCSpacing.lg),
         _DocumentTypeField(state: state),
-        const SizedBox(height: SpacingTokens.lg),
+        const SizedBox(height: TCSpacing.lg),
         _CaptureCard(
           label: 'Government ID',
           hint: 'A clear photo of the whole document.',
           bytes: state.idDocumentBytes,
           onCapture: _busy ? null : onCaptureId,
         ),
-        const SizedBox(height: SpacingTokens.md),
+        const SizedBox(height: TCSpacing.md),
         _CaptureCard(
           label: 'Selfie holding your ID',
           // Deliberately not called a liveness check anywhere — it raises
@@ -187,27 +186,27 @@ class _CaptureView extends StatelessWidget {
           bytes: state.selfieBytes,
           onCapture: _busy ? null : onCaptureSelfie,
         ),
-        const SizedBox(height: SpacingTokens.lg),
+        const SizedBox(height: TCSpacing.lg),
         Text(
           'Your ID is visible only to the person reviewing it, and we '
           'delete both photos as soon as your review is done.',
           style: theme.textTheme.bodySmall,
         ),
         if (state.status == IdentitySubmitStatus.failed) ...[
-          const SizedBox(height: SpacingTokens.md),
+          const SizedBox(height: TCSpacing.md),
           _ErrorBanner(state: state, theme: theme),
         ],
-        const SizedBox(height: SpacingTokens.lg),
+        const SizedBox(height: TCSpacing.lg),
         FilledButton(
           onPressed: state.canSubmit ? () => unawaited(onSubmit()) : null,
           child: Text(_busy ? 'Sending…' : 'Submit for review'),
         ),
-        const SizedBox(height: SpacingTokens.md),
+        const SizedBox(height: TCSpacing.md),
         const ExpansionTile(
           title: Text('Why do we ask?'),
           children: [
             Padding(
-              padding: EdgeInsets.only(bottom: SpacingTokens.md),
+              padding: EdgeInsets.only(bottom: TCSpacing.md),
               child: Text(
                 'Discover introduces you to people you have never met, in '
                 'person. Checking a government ID first means everyone at '
@@ -277,9 +276,13 @@ class _CaptureCard extends StatelessWidget {
           leading: captured
               ? ClipRRect(
                   borderRadius:
-                      BorderRadius.circular(SpacingTokens.radiusControl),
-                  child: Image.memory(bytes!,
-                      width: 48, height: 48, fit: BoxFit.cover),
+                      BorderRadius.circular(TCSpacing.radiusControl),
+                  child: Image.memory(
+                    bytes!,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                  ),
                 )
               : const Icon(Icons.photo_camera_outlined),
           title: Text(label),
@@ -318,10 +321,10 @@ class _ErrorBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(SpacingTokens.md),
+      padding: const EdgeInsets.all(TCSpacing.md),
       decoration: BoxDecoration(
         color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(SpacingTokens.radiusControl),
+        borderRadius: BorderRadius.circular(TCSpacing.radiusControl),
       ),
       child: Text(
         _message,
@@ -340,11 +343,10 @@ class _ReviewStatusView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final status =
-        ref.watch(identityVerificationStatusProvider(submissionId));
+    final status = ref.watch(identityVerificationStatusProvider(submissionId));
 
     return Padding(
-      padding: const EdgeInsets.all(SpacingTokens.lg),
+      padding: const EdgeInsets.all(TCSpacing.lg),
       child: status.when(
         loading: () => const Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -378,41 +380,43 @@ class _StatusCard extends ConsumerWidget {
         children: switch (status) {
           IdentityPendingReview() => [
               Text('Waiting for review', style: theme.textTheme.titleLarge),
-              const SizedBox(height: SpacingTokens.sm),
+              const SizedBox(height: TCSpacing.sm),
               Text(
                 'Someone on our team is looking at your documents. This '
                 'usually takes a day or so. You can close the app — we '
                 'will keep your place.',
                 style: theme.textTheme.bodyMedium,
               ),
-              const SizedBox(height: SpacingTokens.lg),
+              const SizedBox(height: TCSpacing.lg),
               const SkeletonPulse(width: double.infinity, height: 80),
             ],
           IdentityApproved() => [
               Text("You're verified", style: theme.textTheme.titleLarge),
-              const SizedBox(height: SpacingTokens.sm),
+              const SizedBox(height: TCSpacing.sm),
               Text(
                 'Your identity is confirmed. Open Tables and Discover are '
                 'available to you now.',
                 style: theme.textTheme.bodyMedium,
               ),
-              const SizedBox(height: SpacingTokens.lg),
+              const SizedBox(height: TCSpacing.lg),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(true),
                 child: const Text('Continue'),
               ),
             ],
-          IdentityRejected(reason: final reason) => [
-              Text("We couldn't verify you this time",
-                  style: theme.textTheme.titleLarge),
-              const SizedBox(height: SpacingTokens.sm),
+          IdentityRejected(:final reason) => [
+              Text(
+                "We couldn't verify you this time",
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: TCSpacing.sm),
               // The reviewer's own words. Under manual review the usual
               // cause is fixable (an unreadable photo), so this is shown
               // verbatim rather than replaced with a generic failure —
               // reviewIdentityVerification refuses a reasonless rejection
               // precisely so there is always something to show here.
               Text(reason, style: theme.textTheme.bodyMedium),
-              const SizedBox(height: SpacingTokens.lg),
+              const SizedBox(height: TCSpacing.lg),
               FilledButton(
                 onPressed: () => ref
                     .read(identityVerificationControllerProvider.notifier)
@@ -422,7 +426,7 @@ class _StatusCard extends ConsumerWidget {
             ],
           IdentityHeldForReview() => [
               Text('Taking a closer look', style: theme.textTheme.titleLarge),
-              const SizedBox(height: SpacingTokens.sm),
+              const SizedBox(height: TCSpacing.sm),
               // Deliberately says nothing about a report. Telling the
               // subject of an open report that one exists, and when, would
               // leak exactly what docs/SECURITY.md's silent-reporting rule

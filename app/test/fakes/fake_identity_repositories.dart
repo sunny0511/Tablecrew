@@ -78,7 +78,7 @@ class FakeIdentityVerificationRepository
       idDocumentUploadId: idDocumentUploadId,
       selfieUploadId: selfieUploadId,
       documentType: documentType,
-    ));
+    ),);
     final error = submitError;
     if (error != null) throw error;
     return submissionIdResult;

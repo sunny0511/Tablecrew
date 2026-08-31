@@ -117,7 +117,7 @@ abstract interface class IdentityVerificationRepository {
   /// Records a submission for human review and returns its `submissionId`.
   ///
   /// The two upload ids must already have been uploaded via
-  /// [IdentityUploadRepository] — the server verifies both objects exist
+  /// `IdentityUploadRepository` — the server verifies both objects exist
   /// under the caller's own prefix and rejects with `UPLOAD_NOT_FOUND`
   /// otherwise.
   Future<String> submitIdentityVerification({

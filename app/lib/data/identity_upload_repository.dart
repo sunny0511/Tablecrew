@@ -9,7 +9,7 @@ part 'identity_upload_repository.g.dart';
 /// Cloud Storage access for the Tier 2 identity-verification upload path
 /// (`identity-verifications/{uid}/{uploadId}`, `storage/storage.rules`,
 /// docs/DATABASE.md §3.10, ADR 0007). Separate from
-/// [IdentityVerificationRepository] for the same reason
+/// `IdentityVerificationRepository` for the same reason
 /// `PhotoUploadRepository` is separate from `UserProfileRepository`: it
 /// wraps a different Firebase product with a different client SDK, and
 /// keeping them apart keeps each independently injectable in tests.
@@ -25,6 +25,12 @@ part 'identity_upload_repository.g.dart';
 /// round trip. See docs/DATABASE.md §6's note on why: a user has no reason
 /// to download their own government ID out of our bucket, and permitting it
 /// would turn a stolen session token into ID exfiltration.
+// ignore: one_member_abstracts — the interface exists for test
+// substitution, not polymorphism: every repository in this codebase is
+// exposed as an overridable provider (docs/ENGINEERING_GUIDELINES.md), and
+// collapsing this to a top-level function would remove the seam the
+// widget/controller tests override. It may well grow a second method when
+// re-verification lands.
 abstract interface class IdentityUploadRepository {
   /// Uploads [bytes] to a freshly-minted path under the caller's own
   /// prefix and returns the generated `uploadId`, which
