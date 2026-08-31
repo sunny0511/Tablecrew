@@ -30,13 +30,25 @@ export const PROJECT_ID = process.env.GCLOUD_PROJECT || 'tablecrew-dev';
 export const REGION = 'us-central1';
 export const FUNCTIONS_EMULATOR_ORIGIN = 'http://127.0.0.1:5001';
 export const AUTH_EMULATOR_ORIGIN = 'http://127.0.0.1:9099';
+/** Default bucket the Functions emulator resolves for this project. */
+export const STORAGE_BUCKET = `${PROJECT_ID}.appspot.com`;
 
 let app: App | undefined;
 
 /** Idempotent — safe to call from every test file's `before()` hook. */
 export function ensureAdminApp(): App {
   if (!app) {
-    app = getApps()[0] ?? initializeApp({projectId: PROJECT_ID});
+    app = getApps()[0] ?? initializeApp({
+      projectId: PROJECT_ID,
+      // Added Milestone F7: identity.integration.test.ts needs to seed and
+      // assert on Storage objects, and getStorage().bucket() throws with no
+      // default configured. This must name the SAME bucket the Functions
+      // emulator resolves from its own FIREBASE_CONFIG, or the function
+      // under test will look in a different bucket than the test seeded —
+      // see that file's header for the one assumption to check on a first
+      // real run.
+      storageBucket: STORAGE_BUCKET,
+    });
   }
   return app;
 }
@@ -50,7 +62,11 @@ export function ensureAdminApp(): App {
  * string as the `key` query parameter; it never calls out to real Google
  * Identity Platform.
  */
-export async function getIdTokenForUid(uid: string, phoneNumber: string): Promise<string> {
+export async function getIdTokenForUid(
+    uid: string,
+    phoneNumber: string,
+    developerClaims?: Record<string, unknown>,
+): Promise<string> {
   ensureAdminApp();
   try {
     await getAuth().createUser({uid, phoneNumber});
@@ -61,7 +77,10 @@ export async function getIdTokenForUid(uid: string, phoneNumber: string): Promis
     }
   }
 
-  const customToken = await getAuth().createCustomToken(uid);
+  // developerClaims land in the minted ID token's payload, which is how
+  // reviewIdentityVerification's `admin` custom-claim check (Milestone F7)
+  // is exercised without persisting an admin claim on a test user.
+  const customToken = await getAuth().createCustomToken(uid, developerClaims);
 
   const signInUrl = `${AUTH_EMULATOR_ORIGIN}/identitytoolkit.googleapis.com/v1/` +
     'accounts:signInWithCustomToken?key=fake-api-key';
