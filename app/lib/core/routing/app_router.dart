@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tablecrew/features/identity/presentation/identity_verification_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/age_ineligible_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/dob_entry_screen.dart';
 import 'package:tablecrew/features/onboarding/presentation/interests_screen.dart';
@@ -36,11 +37,20 @@ import 'package:tablecrew/features/trust/presentation/report_flow_screen.dart';
 /// **Deliberately excluded** (per `docs/IMPLEMENTATION_PLAN.md` section 1's
 /// "Explicitly not in Foundation scope" list, and Recommendation R7's
 /// "do not scaffold Discover-adjacent code paths during Foundation"):
-/// Screen 8 (Tier 2 Identity Verification), Screens 18-21 (Discover Feed/
-/// Filters/Table Preview/First-Time Safety Briefing — all Discover-only),
+/// Screens 18-21 (Discover Feed/Filters/Table Preview/First-Time Safety
+/// Briefing — all Discover-only),
 /// Screen 26 (Recurring Table Schedule Setup — "recurring-ritual
 /// automation"), Screens 30-31 (Bill Split Setup / Split Request Detail —
 /// bill-splitting/payments), Screen 34 (TableCrew+ Subscription — billing).
+/// **Screen 8 (Tier 2 Identity Verification) left this list in Milestone
+/// F7.** R7's caution was about scaffolding a Discover-adjacent path
+/// before its dependencies existed; under ADR 0007 the dependencies are
+/// real and built (`submitIdentityVerification`,
+/// `reviewIdentityVerification`, the Storage path and its rules), and the
+/// screen is reachable from Create Table's Open-visibility option and the
+/// seat-request flow. It is a real route with a real screen now, not a
+/// dormant branch.
+///
 /// These routes do not exist in this table at all, rather than existing as
 /// disabled/hidden stubs — adding even a dormant route for them would be
 /// exactly the "wiring the dormant branch now... adds real complexity and
@@ -178,6 +188,13 @@ final GoRouter appRouter = GoRouter(
     // target can be a user uid or a Table id), so query params carry the
     // target reference the same way `createTable`'s optional `crewId`
     // does above.
+    // Screen 8 — Tier 2 identity verification (Milestone F7, ADR 0007).
+    GoRoute(
+      path: AppRoutes.identityVerification,
+      name: 'identity-verification',
+      pageBuilder: (context, state) =>
+          _screenPage(const IdentityVerificationScreen()),
+    ),
     GoRoute(
       path: AppRoutes.report,
       name: 'report',
@@ -280,6 +297,9 @@ abstract final class AppRoutes {
   static const crewDetail = '/crews/:crewId';
 
   /// Screen 27.
+  /// Screen 8 — Tier 2 identity verification (Milestone F7, ADR 0007).
+  static const identityVerification = '/identity-verification';
+
   static const report = '/report';
 
   /// Screen 28.

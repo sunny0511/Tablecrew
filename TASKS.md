@@ -305,7 +305,22 @@ Two fixes, both aimed at the class of problem rather than this instance:
 
 - **`expectOk()` stops one failure from reporting as five.** Every happy-path callable now goes through a helper that fails with the actual HTTP status and error code at the point it happened, instead of letting an undefined result cascade into TypeErrors in later tests.
 
-**Still open in this chunk — Screen 8's Flutter client is NOT built.** The repository layer, controller, screen, and its widget tests are the remaining work. Deliberately not written blind: no Flutter/Dart toolchain exists in the Cowork VM, and this repository's own history is a long list of real bugs that only a live `flutter analyze`/`flutter test` surfaced (F5's `SplashScreen` autoDispose race, F6's `StatefulBuilder` dialog bug, the `OfflineMutationQueue` late-field race). Shipping ~600 lines of uncompiled Dart would contradict the practice that caught every one of those. The backend contract it builds against is settled and verified, so this is a clean pick-up: `submitIdentityVerification` + a `identityVerifications/{submissionId}` snapshot listener, following `watchPhotoModerationStatus`'s existing sealed-class-per-state shape in `app/lib/data/user_profile_repository.dart`.
+**Screen 8's Flutter client is written (2026-08-31) — NOT yet verified.** No Flutter/Dart toolchain exists in the Cowork VM, so nothing below has been compiled, analyzed, or run. It needs the same founder-machine pass every Flutter chunk since F3 has had, and should not be treated as done until it goes green:
+
+```
+cd app
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs   # new @riverpod providers
+dart format --set-exit-if-changed .
+flutter analyze
+flutter test          # expect ~186, up from 169
+```
+
+Delivered: `data/identity_upload_repository.dart` (Storage, interface + impl — **write-only by construction**: `storage.rules` denies read to everyone including the uploader, so there is deliberately no fetch-back method that could grow into one); `data/identity_verification_repository.dart` (the callable, the status listener, the `IdentityVerificationStatus` sealed class mirroring `PhotoModerationStatus`'s shape, and `fetchPendingSubmissionId`); `features/identity/application/identity_verification_controller.dart` (`keepAlive: true` — a torn-down provider here would lose a `submissionId` mid-upload with images already in Storage, which `REVIEW_ALREADY_PENDING` would then block the user from retrying); `features/identity/presentation/identity_verification_screen.dart`; the route (Screen 8 removed from `app_router.dart`'s deliberate-exclusion list, with the reasoning updated rather than deleted); hand-written fakes; 10 controller tests and 7 widget tests.
+
+**A recovery path worth knowing about before reviewing the controller:** `REVIEW_ALREADY_PENDING` is deliberately not treated as an error. It means a submission this client lost track of is still open, so the controller fetches the pointer and shows the waiting state instead of an error the user can do nothing about.
+
+**Three of the widget tests assert on copy, which is unusual for this codebase and deliberate.** ADR 0007 and `docs/SECURITY.md` record two promises that an innocent-looking copy edit would silently break: manual review is **not** a liveness check (so `liveness`/`physically present`/`really here` are barred from the capture view), and the `held_for_review` state must not disclose that a report exists (so `report`/`reported`/`flagged` are barred from it). Pinned as executable assertions rather than left to review.
 
 **Not done, needs the founder:** granting yourself the `admin` custom claim. `scripts/grant_admin.ts` (new this chunk) does it — nothing in the app can, deliberately, since the claim lives in Firebase Auth rather than Firestore so no application code path can hand out review authority:
 ```
