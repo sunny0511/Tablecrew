@@ -236,6 +236,20 @@ A new `onboarding_profile_draft_controller.dart` (`@riverpod`, `OnboardingProfil
 - **New fakes/tests:** `test/fakes/fake_trust_repository.dart`; `report_flow_controller_test.dart` (6), `block_confirmation_controller_test.dart` (3), `report_flow_screen_test.dart` (9), `block_confirmation_screen_test.dart` (5); 3 new `table_detail_screen_test.dart` cases covering the overflow menu's routing and self-row exclusion.
 - **Update:** both this chunk's PR (`f6-trust-safety-client` → `f6-trust-safety-backend`, #2) and the fourth chunk's PR (`f6-trust-safety-backend` → `main`, #1) have been reviewed and merged into `main`. **Milestone F6 is complete.** Milestone F7 (Discover) begins below.
 
+## CI — golden tests failed on an unintended pubspec.lock bump (2026-08-31)
+
+**Symptom:** `test-flutter` failed 2/184 in CI while passing 186/186 locally. Both failures were `status_chip_golden_test.dart`'s **CI variant** (light and dark).
+
+**Why it passed locally:** Alchemist runs the platform goldens by default and the `goldens/ci/` set only under `--dart-death CI=true`, which is what `.github/workflows/ci.yml` passes and what a plain local `flutter test` does not. So the CI goldens had not actually been executed since they were generated — the local suite has never covered them, by design.
+
+**Cause:** `app/pubspec.lock` was modified on this branch without anyone deciding to modify it. A `flutter pub get` during the Screen 8 verification pass re-resolved six transitive packages, and the agent's `git add -A` swept the result into commit `42b102d` alongside unrelated fixes. The consequential one is **`vector_math` 2.2.0 → 2.4.2** — a transform/geometry library whose output plausibly shifts rendered pixels; the other five (`matcher`, `meta`, `test`, `test_api`, `test_core`) are test infrastructure.
+
+**Fix:** `pubspec.lock` reverted to `main`'s. No dependency was added on this branch (`pubspec.yaml` is unchanged against `main`), so nothing here needs the newer versions. A dependency bump that changes golden output is a real, reviewable change and belongs in its own PR alongside regenerated goldens — not smuggled into an identity-verification branch.
+
+**Process lesson, worth more than the fix:** `git add -A` commits whatever is in the tree, including changes made by someone else's tool run that nobody reviewed. Staging by path is the habit that would have caught this at commit time rather than in CI.
+
+**If `flutter pub get` re-resolves these again locally**, that is the signal to do the bump deliberately: update the lock, run `flutter test --dart-define=CI=true` to regenerate/verify the CI goldens, and land both together.
+
 ## CI — Typesense service container never started (2026-08-31)
 
 **First-ever real run of the `typesense-integration-tests` job** (added earlier in F7, flagged then as never exercised on a real runner) failed at "Initialize containers": `Service container typesense failed.`
