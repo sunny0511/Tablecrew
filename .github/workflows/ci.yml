@@ -86,12 +86,36 @@ jobs:
       - name: Install dependencies
         working-directory: functions
         run: npm ci
-      - name: Build + run unit tests with coverage
+      # The pass/fail gate. Kept separate from the coverage run below
+      # deliberately (2026-08-31): they were one step, and a crash in
+      # Node's coverage *reporter* failed the whole job while every test
+      # passed.
+      - name: Build + run unit tests
         working-directory: functions
-        run: npm run test:coverage
+        run: npm test
       # 85%+ business-logic coverage is a soft gate per docs/TESTING.md - a
       # human reviews a drop below threshold, CI does not hard-block on it.
       # No coverage-threshold-enforcing step is added here for that reason.
+      #
+      # `|| true` because this step is the *report*, not the gate, and the
+      # step above already failed the job on any real test failure. This
+      # is not papering over a flake: `node --test
+      # --experimental-test-coverage` on Node 20.20.2 exits 1 with
+      # "Could not report code coverage. TypeError: Cannot read properties
+      # of undefined (reading 'line')" while reporting 0 failures, and it
+      # does so on `main` too — reproduced by checking out main and running
+      # it under Node 20, so it is a toolchain regression, not something
+      # this repository introduced. `node-version-file` resolves "20" to
+      # the newest 20.x, so the runner's Node moved under us; earlier PRs
+      # were green on an older patch. Node 22 (what developer machines run
+      # here) reports coverage fine.
+      #
+      # Leaving the old single-step form would mean every future PR is red
+      # for a reason unrelated to its contents, which is the fastest way to
+      # teach a team to ignore CI.
+      - name: Coverage report (informational)
+        working-directory: functions
+        run: npm run test:coverage || true
 
   test-flutter:
     name: "Stage 2 · Unit + widget tests · Flutter"

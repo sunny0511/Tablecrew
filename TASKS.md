@@ -236,6 +236,22 @@ A new `onboarding_profile_draft_controller.dart` (`@riverpod`, `OnboardingProfil
 - **New fakes/tests:** `test/fakes/fake_trust_repository.dart`; `report_flow_controller_test.dart` (6), `block_confirmation_controller_test.dart` (3), `report_flow_screen_test.dart` (9), `block_confirmation_screen_test.dart` (5); 3 new `table_detail_screen_test.dart` cases covering the overflow menu's routing and self-row exclusion.
 - **Update:** both this chunk's PR (`f6-trust-safety-client` → `f6-trust-safety-backend`, #2) and the fourth chunk's PR (`f6-trust-safety-backend` → `main`, #1) have been reviewed and merged into `main`. **Milestone F6 is complete.** Milestone F7 (Discover) begins below.
 
+## CI — Node 20 coverage-reporter regression (2026-08-31)
+
+**Symptom:** the `test-functions` job fails with every test passing:
+
+```
+# tests 134   # pass 134   # fail 0
+# Warning: Could not report code coverage. TypeError: Cannot read properties of undefined (reading 'line')
+##[error]Process completed with exit code 1.
+```
+
+**Not caused by the branch it first appeared on.** Reproduced by checking `main` out into a worktree and running the same command under Node 20.20.2: 122 tests pass, identical crash, exit 1. Also reproduces with the F7 identity tests excluded. `engines.node` is `"20"` and CI's `node-version-file` resolves that to the newest 20.x, so the runner's Node drifted onto a patch release whose `--experimental-test-coverage` reporter crashes here. Node 22 — what every developer machine in this project runs — reports coverage fine, which is exactly why this was invisible locally.
+
+**Fix:** split the one CI step into a gate (`npm test`) and an informational report (`npm run test:coverage || true`). This restores what `docs/TESTING.md` and the workflow's own comment already said was intended — coverage is a soft gate that a human reviews, not a hard blocker — while keeping real test failures fatal. Leaving it as-is would have made every future PR red for a reason unrelated to its contents.
+
+**Not done, deliberately:** `engines.node` was left at `"20"`. It declares the Cloud Functions *deploy runtime* (`docs/ARCHITECTURE.md`), not a test-tooling preference, so bumping it to 22 is a real infrastructure decision for the founder — not something to change as a side effect of a CI fix. Worth doing on its own merits, since local development is already on 22 and the gap is what hid this.
+
 ## Milestone F7 — Discover (in progress, started 2026-08-02)
 
 Per `docs/IMPLEMENTATION_PLAN.md` §4's F7 row: Tier 2 identity verification (Persona), Typesense provisioned across dev/staging/prod with a real CI story, the Open-visibility branch of `createTable` (Screen 10's dormant branch), Discover browse/search/filter (Screens 18–21), `requestSeat`'s blocked-user check (deferred from F4), the whole surface behind a Remote Config flag defaulted off.
