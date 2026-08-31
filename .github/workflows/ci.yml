@@ -243,6 +243,15 @@ jobs:
       - name: Install dependencies
         working-directory: functions
         run: npm ci
+      # MUST run before `emulators:exec`, not inside the script it invokes.
+      # The Functions emulator scans for functions at startup, so a build
+      # that happens inside the exec'd command is always too late — the
+      # emulator has already logged "lib/index.js does not exist" and loaded
+      # nothing by then. The package.json scripts also build, which is
+      # correct for their own sake but cannot fix load ordering.
+      - name: Build functions (before the emulator loads them)
+        working-directory: functions
+        run: npm run build
       - name: Run the Typesense sync integration test against the emulators + service container
         env:
           TYPESENSE_HOST: localhost

@@ -271,7 +271,20 @@ With the service container finally starting (previous entry), the job failed dif
 
 **A test that passed for the wrong reason, worth fixing separately:** "a Closed Table is never indexed" passed — because nothing was indexed, since nothing was running. An assertion of *absence* succeeds trivially when the whole system under test is down. It should first establish that the trigger is alive (index an eligible Table, observe it) and only then assert the Closed one is absent, otherwise it will keep reporting green through exactly the outage it should catch.
 
-**Fixed at the script level, not in the workflow.** Both `test:integration` and `test:integration:typesense` now run `npm run build` first. The same latent bug exists locally — those suites have only ever worked on developer machines because a stale `lib/` happened to be present from an earlier build. A fresh clone would have hit the identical confusing timeouts. Fixing the CI job alone would have left that trap in place for the next person.
+**Two-part fix, and the first attempt was in the wrong place.** Adding `npm run build` to the npm scripts was necessary but not sufficient, and the run log said so plainly in its ordering:
+
+```
+i functions: Watching ... for Cloud Functions...
+⬢ functions: Failed to load function definition ... lib/index.js does not exist
+i Running script: npm --prefix functions run test:integration:typesense
+> npm run build
+```
+
+`firebase emulators:exec` starts the emulators **first** and only then runs the command it was given. The Functions emulator scans for functions at startup, so a build inside the exec'd script can never be early enough — the emulator has already given up and loaded nothing. The build has to be its own CI step *before* `emulators:exec`, which it now is.
+
+The script-level build stays: it is still correct for the suite's own sake, and it closes the fresh-clone trap where these tests have only ever passed locally because a stale `lib/` happened to be lying around from an earlier build. But it cannot fix load ordering, and it was a misreading to think it would — the sequence was visible in the first run's log.
+
+**Local runs need the same ordering.** `firebase emulators:exec ... "npm --prefix functions run test:integration"` carries the identical trap on a clean checkout; run `npm --prefix functions run build` before it.
 
 ## CI — Typesense service container never started (2026-08-31)
 
