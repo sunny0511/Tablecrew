@@ -305,6 +305,25 @@ jobs:
       - name: Generate code (build_runner)
         working-directory: app
         run: dart run build_runner build
+      # google-services.json is gitignored on purpose — .gitignore files it
+      # under "Environment / secrets", and ENGINEERING_GUIDELINES tells new
+      # engineers to get it from their onboarding buddy rather than the repo.
+      # CI therefore has to be given it, and a repository secret is the way
+      # that keeps the existing decision intact. Fails loudly with the fix
+      # rather than letting Gradle report a confusing missing-file error.
+      - name: Write google-services.json
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::error::Repository secret GOOGLE_SERVICES_JSON_BASE64 is not set."
+            echo "Create it from the dev project's config:"
+            echo "  base64 -i app/android/app/google-services.json | pbcopy"
+            echo "then add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode \
+            > app/android/app/google-services.json
       - name: flutter build apk --debug
         working-directory: app
         run: flutter build apk --debug
@@ -332,6 +351,20 @@ jobs:
       - name: Generate code (build_runner)
         working-directory: app
         run: dart run build_runner build
+      # Same reasoning as the Android job's google-services.json step.
+      - name: Write GoogleService-Info.plist
+        env:
+          GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+        run: |
+          if [ -z "$GOOGLE_SERVICE_INFO_PLIST_BASE64" ]; then
+            echo "::error::Repository secret GOOGLE_SERVICE_INFO_PLIST_BASE64 is not set."
+            echo "Create it from the dev project's config:"
+            echo "  base64 -i app/ios/Runner/GoogleService-Info.plist | pbcopy"
+            echo "then add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICE_INFO_PLIST_BASE64" | base64 --decode \
+            > app/ios/Runner/GoogleService-Info.plist
       - name: flutter build ios --debug --no-codesign
         working-directory: app
         run: flutter build ios --debug --no-codesign

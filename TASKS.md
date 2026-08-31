@@ -250,6 +250,27 @@ Manual dispatch only, on purpose: golden images are the design-system reference,
 
 **Deliberately not done:** loosening the comparator's tolerance or skipping goldens in CI. Both turn a red check green while removing the protection the suite exists to provide, which is worse than the current state — at least a red check is honest about being broken.
 
+## CI — the Flutter build jobs need the Firebase client config (2026-08-31)
+
+With codegen added (below), `build-flutter-android` compiled for the first time and reached Gradle, which failed on:
+
+```
+File google-services.json is missing. The Google Services Plugin cannot function without it.
+```
+
+Both `app/android/app/google-services.json` and `app/ios/Runner/GoogleService-Info.plist` exist on developer machines but are **gitignored on purpose** — `.gitignore` files them under "Environment / secrets", and `ENGINEERING_GUIDELINES.md` tells new engineers to get them from their onboarding buddy rather than the repository. That is a deliberate decision, so CI is given them through repository secrets rather than by committing them and quietly reversing it.
+
+**Two repository secrets are required** (Settings → Secrets and variables → Actions). Until they exist, both build jobs fail with an explicit message naming the missing secret and the command to produce it, rather than a confusing Gradle error:
+
+```
+GOOGLE_SERVICES_JSON_BASE64        base64 -i app/android/app/google-services.json | pbcopy
+GOOGLE_SERVICE_INFO_PLIST_BASE64   base64 -i app/ios/Runner/GoogleService-Info.plist | pbcopy
+```
+
+**Worth revisiting, not decided here:** neither file is really a secret in the cryptographic sense — `google-services.json` ships inside every APK and anyone can extract it, and the API keys in it are client identifiers protected by App Check and security rules, not bearer credentials. Several teams commit them for exactly that reason. This repository classified them as secrets, and the CI change respects that; but if that classification was reflexive rather than reasoned, committing the **dev** project's config would remove a moving part from CI and from onboarding. A decision for the founder, not something to change as a side effect of fixing a build.
+
+**Also in this pass:** `compileSdk` in `app/android/app/build.gradle.kts` is pinned to 37 rather than inherited from `flutter.compileSdkVersion`, because a plugin in the current dependency set requires it and the Gradle output says so directly. `compileSdk` governs which APIs are compiled against, not the minimum supported device (`minSdk` does that), so raising it is backward compatible. The tradeoff is that it no longer tracks the Flutter SDK automatically and has to be moved by hand when a plugin outgrows it — a loud failure rather than a silent upgrade, which matches R5's pin-exact-versions convention.
+
 ## CI — the Flutter build jobs were missing codegen (2026-08-31)
 
 `build-flutter-android` and `build-flutter-ios` have been recorded as "never run anywhere" since F0. Reading them against the jobs that do work explains why, with no guesswork needed: `lint-flutter` and `test-flutter` each run `dart run build_runner build`; the two build jobs never did. `*.g.dart` is gitignored, so a clean CI checkout contains no generated sources, and `flutter build` cannot resolve the `part 'x.g.dart'` directive that every `@riverpod` provider declares. They could not have compiled on any commit, ever.
