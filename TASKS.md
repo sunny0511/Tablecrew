@@ -236,6 +236,17 @@ A new `onboarding_profile_draft_controller.dart` (`@riverpod`, `OnboardingProfil
 - **New fakes/tests:** `test/fakes/fake_trust_repository.dart`; `report_flow_controller_test.dart` (6), `block_confirmation_controller_test.dart` (3), `report_flow_screen_test.dart` (9), `block_confirmation_screen_test.dart` (5); 3 new `table_detail_screen_test.dart` cases covering the overflow menu's routing and self-row exclusion.
 - **Update:** both this chunk's PR (`f6-trust-safety-client` → `f6-trust-safety-backend`, #2) and the fourth chunk's PR (`f6-trust-safety-backend` → `main`, #1) have been reviewed and merged into `main`. **Milestone F6 is complete.** Milestone F7 (Discover) begins below.
 
+## F7 is now operable — the review step had no working client (2026-08-31)
+
+**The gap:** ADR 0007's design has exactly one required human action — an operator approving a submission — and there was no way to perform it. `reviewIdentityVerification` enforced App Check like every other callable, there is no admin console until Phase 4, and an App Check token cannot practically be minted from a script. So the endpoint that the entire manual-verification design depends on was uncallable. Not caught during the build because every test exercises it through the Functions emulator, where App Check enforcement is disabled by the same `FUNCTIONS_EMULATOR` branch that makes the other callables testable — the tests were green and the endpoint was unusable, at the same time.
+
+**Fix, two parts:**
+
+1. `reviewIdentityVerification` no longer enforces App Check, alone among this codebase's callables, with the reasoning recorded at the call site and in `docs/API_SPEC.md` §3.7. App Check attests that a request came from a genuine instance of *your app*; this endpoint is never called from the app, so attestation had nothing to assert. **Authorization is unchanged** — it is still the `admin` custom claim, settable only via the Admin SDK, unreachable from any client. Turn it back on if an admin console is ever built as a real Firebase app, because then the caller genuinely is one.
+2. `scripts/review_identity.ts` (new) — lists pending submissions with signed image URLs and the submitter's DOB on file, and applies decisions **through the callable**, never by writing Firestore directly. A direct write would have been shorter and would have skipped the DOB attestation, the apply-time open-report re-check, the image deletion and the audit record.
+
+**Still not done:** nobody has run an end-to-end submission yet. Screen 8 has never sent a real upload at a deployed project, and no reviewer has approved a real person. Until that happens F7 is verified but unexercised, and the first live run is where the remaining unknowns are — Cloud Vision credentials, real Storage rules under a real client, and whether the reviewer flow is actually workable at a terminal.
+
 ## CI — the `ci/` goldens are macOS artifacts and have never passed on Linux (2026-08-31)
 
 **Symptom:** `test-flutter` fails 2/184 on `status_chip_golden_test.dart`'s CI variant (light and dark) while the same command passes locally.
