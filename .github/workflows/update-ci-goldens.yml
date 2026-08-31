@@ -1,0 +1,72 @@
+# Regenerates the Alchemist `ci/` golden images on ubuntu-latest — the same
+# platform that compares them in ci.yml's `test-flutter` job.
+#
+# Why this exists (2026-08-31): the `ci/` goldens were generated once, at
+# Milestone F3, on a macOS machine, and CI has compared them on Linux ever
+# since. `flutter test --dart-define=CI=true` passes on macOS and fails on
+# ubuntu with the identical pinned Flutter (3.44.8). Alchemist's Ahem font
+# makes *text* rendering deterministic across platforms; it does not do the
+# same for anti-aliasing or image filtering, so a macOS-generated golden can
+# differ from a Linux render by a few pixels indefinitely. Regenerating on a
+# Mac reproduces the mismatch exactly — the images have to be produced where
+# they are checked.
+#
+# The consequence that made this worth a whole workflow rather than a one-off
+# fix: Recommendation R2's design-system drift protection has been inert in
+# CI since F3, because the comparison never had a chance of passing.
+# `docs/DESIGN_SYSTEM.md` names "engineering hard-codes a close-enough value"
+# as a real drift risk and points at this suite as the cheap guard against
+# it. It needs to actually work.
+#
+# Manual dispatch only. Golden images are the design-system reference, so
+# regenerating them should be a deliberate act by a person who then reviews
+# the diff — never something that happens silently on every push. The commit
+# it produces lands on the branch you dispatch it from and shows up in that
+# branch's PR diff like any other change.
+name: Update CI goldens
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-ci-goldens:
+    name: "Regenerate ci/ goldens on Linux"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: app/.flutter-version
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+      # *.g.dart is gitignored (see .gitignore), so the package does not
+      # compile from a clean checkout without this.
+      - name: Generate code
+        working-directory: app
+        run: dart run build_runner build
+      - name: Regenerate the ci/ goldens
+        working-directory: app
+        run: flutter test --update-goldens --dart-define=CI=true test/widgets/
+      - name: Commit the regenerated goldens
+        run: |
+          # Only the golden images are staged, deliberately. `flutter pub
+          # get` above can re-resolve pubspec.lock, and an unreviewed
+          # transitive bump riding along on a golden refresh is exactly the
+          # accident that produced this branch's earlier CI failure.
+          if git diff --quiet -- app/test/widgets/goldens/ci; then
+            echo "Goldens already match a Linux render — nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/test/widgets/goldens/ci
+          git commit -m "chore(goldens): regenerate ci/ goldens on ubuntu-latest"
+          git push

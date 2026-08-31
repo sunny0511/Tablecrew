@@ -236,6 +236,49 @@ A new `onboarding_profile_draft_controller.dart` (`@riverpod`, `OnboardingProfil
 - **New fakes/tests:** `test/fakes/fake_trust_repository.dart`; `report_flow_controller_test.dart` (6), `block_confirmation_controller_test.dart` (3), `report_flow_screen_test.dart` (9), `block_confirmation_screen_test.dart` (5); 3 new `table_detail_screen_test.dart` cases covering the overflow menu's routing and self-row exclusion.
 - **Update:** both this chunk's PR (`f6-trust-safety-client` → `f6-trust-safety-backend`, #2) and the fourth chunk's PR (`f6-trust-safety-backend` → `main`, #1) have been reviewed and merged into `main`. **Milestone F6 is complete.** Milestone F7 (Discover) begins below.
 
+## CI — the `ci/` goldens are macOS artifacts and have never passed on Linux (2026-08-31)
+
+**Symptom:** `test-flutter` fails 2/184 on `status_chip_golden_test.dart`'s CI variant (light and dark) while the same command passes locally.
+
+**Confirmed, not inferred:** `flutter test --dart-define=CI=true` passes on the founder's Mac and fails on `ubuntu-latest` with the same Flutter (3.44.8, pinned in `app/.flutter-version` and unchanged since F3). The goldens were generated once, at F3 (`71e3cf4`), on macOS. Alchemist's `ci/` variant uses the Ahem font to make *text* rendering deterministic across platforms — it does not make anti-aliasing, shadows or image filtering deterministic, so a macOS-generated golden compared on Linux can differ by a few pixels indefinitely. Re-running does not help, and regenerating on macOS would reproduce it exactly.
+
+**The finding that matters more than the failure:** these goldens have never been validated on Linux. CI has been comparing macOS artifacts on ubuntu since F3, which means Recommendation R2's design-system drift protection — the entire reason the harness exists — has been **inert in CI since the day it landed**. `docs/DESIGN_SYSTEM.md` names "engineering hard-codes a close-enough value" as a known drift risk and cites this suite as the cheap guard against it. It has not been guarding anything.
+
+**Fix:** `.github/workflows/update-ci-goldens.yml` (new) regenerates the `ci/` goldens on `ubuntu-latest` — the platform that compares them — using the same `subosito/flutter-action@v2` + `flutter-version-file` setup every other job here already uses. Run it from the Actions tab against the branch that needs it; it commits the regenerated images to that branch, so the diff lands in the PR and gets reviewed like any other change.
+
+Manual dispatch only, on purpose: golden images are the design-system reference, and regenerating them should be a deliberate act someone then looks at, not something that happens silently on every push. The commit step stages **only** `app/test/widgets/goldens/ci` — `flutter pub get` in that job can re-resolve `pubspec.lock`, and an unreviewed transitive bump riding along on a golden refresh is precisely the accident that caused this branch's earlier failure.
+
+**Deliberately not done:** loosening the comparator's tolerance or skipping goldens in CI. Both turn a red check green while removing the protection the suite exists to provide, which is worse than the current state — at least a red check is honest about being broken.
+
+## CI — Typesense service container never started (2026-08-31)
+
+**First-ever real run of the `typesense-integration-tests` job** (added earlier in F7, flagged then as never exercised on a real runner) failed at "Initialize containers": `Service container typesense failed.`
+
+**Cause:** GitHub Actions service containers accept only `image`/`env`/`ports`/`options`/`volumes` — **there is no `command:`**. `docker-compose.yml` starts Typesense with `command: "--data-dir /data --api-key=... --enable-cors"`, which cannot be carried across, so the job expressed it as env vars. Two things were still wrong, and the failure message does not distinguish them, so both are fixed rather than one guessed at:
+
+1. `TYPESENSE_DATA_DIR` pointed at `/tmp/typesense-data`, which does not exist inside the image. `typesense-server` exits rather than creating it, so the container was dead before any health check ran. Now `/tmp`.
+2. The health check ran `curl` **inside** the Typesense container. The official image is minimal and is not guaranteed to ship curl; if it does not, the check can never pass and Actions marks the service failed even when the server is fine. Readiness is now polled from the runner — which definitely has curl — against the mapped port.
+
+A `docker logs` step guarded by `if: failure()` was added so the next failure here diagnoses itself. **Unverified:** no Docker is available in the environment the agent runs in, so this fix is reasoned from the Actions service-container contract and the image's behavior, not reproduced. CI is the first real test of it.
+
+**Related drift worth a look, not fixed here:** this job installs `firebase-tools@13` while the rules job and every local run use 15.x. Not the cause of this failure, but two CLI majors apart in one workflow is the kind of gap that produces a confusing failure later.
+
+## CI — Node 20 coverage-reporter regression (2026-08-31)
+
+**Symptom:** the `test-functions` job fails with every test passing:
+
+```
+# tests 134   # pass 134   # fail 0
+# Warning: Could not report code coverage. TypeError: Cannot read properties of undefined (reading 'line')
+##[error]Process completed with exit code 1.
+```
+
+**Not caused by the branch it first appeared on.** Reproduced by checking `main` out into a worktree and running the same command under Node 20.20.2: 122 tests pass, identical crash, exit 1. Also reproduces with the F7 identity tests excluded. `engines.node` is `"20"` and CI's `node-version-file` resolves that to the newest 20.x, so the runner's Node drifted onto a patch release whose `--experimental-test-coverage` reporter crashes here. Node 22 — what every developer machine in this project runs — reports coverage fine, which is exactly why this was invisible locally.
+
+**Fix:** split the one CI step into a gate (`npm test`) and an informational report (`npm run test:coverage || true`). This restores what `docs/TESTING.md` and the workflow's own comment already said was intended — coverage is a soft gate that a human reviews, not a hard blocker — while keeping real test failures fatal. Leaving it as-is would have made every future PR red for a reason unrelated to its contents.
+
+**Not done, deliberately:** `engines.node` was left at `"20"`. It declares the Cloud Functions *deploy runtime* (`docs/ARCHITECTURE.md`), not a test-tooling preference, so bumping it to 22 is a real infrastructure decision for the founder — not something to change as a side effect of a CI fix. Worth doing on its own merits, since local development is already on 22 and the gap is what hid this.
+
 ## Milestone F7 — Discover (in progress, started 2026-08-02)
 
 Per `docs/IMPLEMENTATION_PLAN.md` §4's F7 row: Tier 2 identity verification (Persona), Typesense provisioned across dev/staging/prod with a real CI story, the Open-visibility branch of `createTable` (Screen 10's dormant branch), Discover browse/search/filter (Screens 18–21), `requestSeat`'s blocked-user check (deferred from F4), the whole surface behind a Remote Config flag defaulted off.
@@ -261,6 +304,75 @@ Per `docs/IMPLEMENTATION_PLAN.md` §4's F7 row: Tier 2 identity verification (Pe
 - **Real bug found by the integration test, not by inspection — exactly the reason this second layer exists:** `deriveTypesenseDocument`'s first version read a Table's `location.geopoint` as `{lat, lng}`. A real Firestore `GeoPoint` (what `location.geopoint` actually holds, confirmed against the live `firebase-admin/firestore` `GeoPoint` class) exposes `.latitude`/`.longitude` instead — there is no `.lat`/`.lng` at all. Every Table therefore looked geopoint-less to the eligibility check, and nothing was ever indexed. The 9 pure-logic unit tests all passed anyway, because their fake fixtures used the same wrong `{lat, lng}` shape as the bug itself — a fake fixture can only be as honest as whoever wrote it, and this is precisely the failure mode `docs/TESTING.md`'s testing pyramid exists to catch with a second, real layer underneath. First real run of the new integration suite failed 3/4 (`waitFor` timeouts — the expected Typesense document never appeared); fixed by reading `.latitude`/`.longitude` in both the trigger and the now-corrected unit-test fixtures (switched to constructing a real `GeoPoint` in the unit tests too, not another hand-rolled shape), and confirmed by rerunning both suites clean.
 - **Docker Desktop status, for the record:** its daemon was initially unreachable in this pass (installed, process tree present, but the API socket never came up) — resolved by fully quitting and relaunching the app, after which `docker compose up -d typesense` and the full verification above ran cleanly. The GitHub Actions CI job itself (`typesense-integration-tests`) has not yet been exercised by a real PR run — flagged as the one remaining unverified piece, consistent with not claiming more than has actually been checked.
 - **Next up:** Tier 2 verification and Discover's own screens remain blocked on Persona/Surepass; this chunk is otherwise done pending review.
+
+**Third piece done (2026-08-31): Tier 2 identity verification, manual — the vendor block is lifted.** Founder direction: stop waiting on Persona/Surepass/Socure and ship manual human review for Phase 0. ADR 0007 (new) supersedes ADR 0005 for the Phase 0 window. **Verified for real (Cowork VM): functions build clean, lint clean, unit tests 134/134 (up from 122), `identity/validation.ts` 100% line/branch/function coverage. NOT verified: rules-emulator and Functions-integration suites — see the blocker below.**
+
+- **Flow, end to end:** ID + selfie upload to a create-only, read-by-nobody Storage path → `submitIdentityVerification` (rate-limited 3/24h, reusing Screen 8's existing cap rather than a second number) → founder reviews in the Firebase console → admin-only `reviewIdentityVerification` applies the decision → client learns the outcome from a live Firestore listener, the same shape Screen 5's photo-moderation verdict uses. Images deleted on decision; nothing ID-derived persisted.
+- **No email, contrary to the original ask.** The request was for an email asking the user to send their ID. There is no email address to send to — onboarding is phone-only and `completeAccountSetup` hardcodes `email: null` — and no email vendor has ever been chosen here. IDs in a mailbox would also be strictly worse than the Storage path under DPDP. Dropped in favor of in-app upload plus an in-app status listener, which removes the email vendor decision entirely rather than adding one.
+- **Rules, and the one subtlety worth not undoing:** `identityVerifications` grants `get` only, never `read`. `read` would also grant `list`, letting any client enumerate their own submission history from a collection that indexes who submitted government ID and when — no product surface wants that, and Screen 8 only ever listens to the one document it just created. Two of the nine new rules tests exist purely to catch a future change back to `read`, since a get-only suite passes identically against the wrong rule.
+- **Storage rules are stricter than the photo path on purpose:** `create` only, and `read: if false` for everyone including the uploader. A user has no reason to download their own government ID back out of our bucket, and allowing it converts any stolen session token into ID exfiltration. The reviewer reads via the console/Admin SDK, which bypasses rules.
+- **`isValidUploadId` rejects separators and dot segments rather than sanitizing.** This is the F6 `triggerDuressSignal` lesson applied one level up: that bug built a Firestore path from an unvalidated `tableId` and crashed; here the same class of bug would address *another user's* object. The uid half of every path comes from `context.auth`, never the request body.
+- **Two safety requirements enforced structurally, not by convention:** an approve carrying `dobMatchesId: false` is refused as `invalid-argument` rather than granting the tier (with no OCR, that reviewer attestation is the only thing standing in for `SECURITY.md`'s ID/DOB cross-check, so it must not be skippable by omission); and the open-report check runs at *apply* time, not submission time, per `SECURITY.md`'s report-filed-mid-verification ordering rule — an account under active review lands in `held_for_review`, not `approved`.
+- **Real pre-existing doc bug found while implementing:** `API_SPEC.md` §3.7 said `verificationTierPublic` is mirrored by "the `DATABASE.md` §4 denormalization trigger." There is no such trigger — `functions/src/triggers/` holds only the Table→Typesense sync, and `completeAccountSetup` has always written the field directly. Both documents are now written explicitly in one batch. Same shape as F5's photo-moderation find; **any other field `DATABASE.md` §4 calls trigger-maintained deserves the same check before something relies on it.** Also fixed: Screen 8 cited `ARCHITECTURE.md` for a no-OCR/liveness boundary that has never appeared in that document.
+- **What manual review costs, recorded in ADR 0007 and corrected in `SECURITY.md` rather than left as stale claims:** TableCrew is now custodian of government ID images (DPDP data-fiduciary duty, mitigated by no-read rules and delete-on-decision but not eliminated); a human selfie/ID comparison is not liveness and copy may not claim it is; and cross-account ban-evasion duplicate detection — a specific commitment in `SECURITY.md` and `DATABASE.md` §7, not an aspiration — is gone for Phase 0. Manual review also does not scale past closed beta, well short of `MARKETING.md`'s Discover liquidity thresholds.
+
+**Both emulator suites now green on the founder's machine (2026-08-31): rules 88/88, Functions-integration 54/54.** They could not be run by the agent — the Firestore emulator JAR (`storage.googleapis.com/firebase-preview-drop/...`) is unreachable from both environments available to it, and the Cowork Linux VM has Java 11 with no root, so firebase-tools 15.x refuses to start there at all. Re-run either with:
+
+```
+# rules-emulator (9 new tests in firestore/test/rules/src/identity.rules.test.ts;
+# expect 88 total, up from 79)
+firebase emulators:exec --only firestore   "npm --prefix firestore/test/rules test" --project tablecrew-dev
+
+# Functions integration (10 new tests; NOTE the added `storage` emulator —
+# this is the first suite here that needs it, so the command in
+# tables/crews/trust's headers will fail on this file)
+firebase emulators:exec --only auth,firestore,functions,storage   --project tablecrew-dev "npm --prefix functions run test:integration"
+```
+
+**First real run (2026-08-31, founder's machine): rules-emulator 88/88 green on the first try; Functions-integration 49/54 — the predicted bucket mismatch, now fixed.** `identity.integration.test.ts` hardcoded the seed bucket as `<projectId>.appspot.com` while the function reads `getStorage().bucket()`, which resolved to something else — so every seeded upload was invisible and `submitIdentityVerification` correctly returned `UPLOAD_NOT_FOUND`. One root cause, five reported failures: one real assertion (`404 !== 200`) plus four downstream `Cannot read properties of undefined (reading 'submissionId')` TypeErrors that read like separate bugs and were not.
+
+Two fixes, both aimed at the class of problem rather than this instance:
+
+- **Root cause, after three diagnostic runs: `firebase emulators:exec` gives its child command a different `FIREBASE_CONFIG` than it gives the Functions runtime.** Logged from both sides in one run:
+
+  ```
+  exec child (the test process) -> storageBucket: "tablecrew-dev.appspot.com"
+  Functions runtime             -> storageBucket: "tablecrew-dev.firebasestorage.app"
+  ```
+
+  Both were correctly routed to the Storage emulator (`FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:9199` in both). They were reading and writing **two different buckets**. The Storage emulator creates buckets on demand, so neither side errored: the seed succeeded in one bucket, the function's `exists()` returned a clean `false` from the other, and `submitIdentityVerification` correctly returned `UPLOAD_NOT_FOUND`. **No production code was ever wrong** — the callable did exactly what it should when it cannot see the images it was handed.
+
+  Two wrong turns worth recording, because both looked like good practice at the time. First, "derive the bucket from `FIREBASE_CONFIG` instead of hardcoding it" is the reflexively correct instinct and was *worse* than the hardcode here — it read the wrong process's config and made a wrong value look principled. Second, `exists()` returning `false` rather than throwing was the tell that the client was looking somewhere legitimate-but-different, and it was read as "the file isn't there" for two runs. **The general lesson for this suite: an emulator env var proves where *this* process points, never where another process points.** Any future integration test touching a service whose address or naming is ambient (Storage buckets, RTDB URLs) should log both sides before trusting either.
+
+  The fix pins the Functions runtime's value (`<projectId>.firebasestorage.app`, Firebase's modern default since the `.appspot.com` rename) with a `TABLECREW_TEST_STORAGE_BUCKET` override, and `logStorageBucket()` prints the bucket and its source at suite start so a future divergence announces itself instead of surfacing as a bare 404.
+
+- **`expectOk()` stops one failure from reporting as five.** Every happy-path callable now goes through a helper that fails with the actual HTTP status and error code at the point it happened, instead of letting an undefined result cascade into TypeErrors in later tests.
+
+**Screen 8's Flutter client is built and verified (2026-08-31): `flutter analyze` clean, `flutter test` 186/186, up from 169.** Written with no toolchain available to the agent, so the first real run found two compile errors and eleven lints — the same pattern every Flutter chunk in this repo has had since F3, and the reason none of them are claimed done on hand-review. The two errors are worth recording because both were avoidable by reading rather than inferring: `SpacingTokens` does not exist (the class in `spacing_tokens.dart` is `TCSpacing`, as every other screen already knew), and `_screenPage` takes `(Widget, GoRouterState)`, not one argument. A third, subtler one took a second run: an `// ignore:` comment only applies to the line immediately below it, so an ignore placed above a multi-line rationale comment silently does nothing and reports as `unnecessary_ignore`.
+
+Verification command set, for the next Flutter chunk:
+
+```
+cd app
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs   # new @riverpod providers
+dart format --set-exit-if-changed .
+flutter analyze
+flutter test          # expect ~186, up from 169
+```
+
+Delivered: `data/identity_upload_repository.dart` (Storage, interface + impl — **write-only by construction**: `storage.rules` denies read to everyone including the uploader, so there is deliberately no fetch-back method that could grow into one); `data/identity_verification_repository.dart` (the callable, the status listener, the `IdentityVerificationStatus` sealed class mirroring `PhotoModerationStatus`'s shape, and `fetchPendingSubmissionId`); `features/identity/application/identity_verification_controller.dart` (`keepAlive: true` — a torn-down provider here would lose a `submissionId` mid-upload with images already in Storage, which `REVIEW_ALREADY_PENDING` would then block the user from retrying); `features/identity/presentation/identity_verification_screen.dart`; the route (Screen 8 removed from `app_router.dart`'s deliberate-exclusion list, with the reasoning updated rather than deleted); hand-written fakes; 10 controller tests and 7 widget tests.
+
+**A recovery path worth knowing about before reviewing the controller:** `REVIEW_ALREADY_PENDING` is deliberately not treated as an error. It means a submission this client lost track of is still open, so the controller fetches the pointer and shows the waiting state instead of an error the user can do nothing about.
+
+**Three of the widget tests assert on copy, which is unusual for this codebase and deliberate.** ADR 0007 and `docs/SECURITY.md` record two promises that an innocent-looking copy edit would silently break: manual review is **not** a liveness check (so `liveness`/`physically present`/`really here` are barred from the capture view), and the `held_for_review` state must not disclose that a report exists (so `report`/`reported`/`flagged` are barred from it). Pinned as executable assertions rather than left to review.
+
+**Not done, needs the founder:** granting yourself the `admin` custom claim. `scripts/grant_admin.ts` (new this chunk) does it — nothing in the app can, deliberately, since the claim lives in Firebase Auth rather than Firestore so no application code path can hand out review authority:
+```
+cd scripts && npm install          # first time only
+npm run grant:admin -- --project=tablecrew-dev --phone=+91XXXXXXXXXX --yes
+```
+Needs `gcloud auth application-default login` (or `GOOGLE_APPLICATION_CREDENTIALS`) for the target project, the same requirement `seed_staging.ts` already carries. The claim only reaches an ID token after that account's next sign-in or token refresh — until then `reviewIdentityVerification` correctly refuses every caller, including you, which is right behavior rather than a bug. `--revoke` takes it back.
 
 ## Update — 2026-08 Foundation re-scoped: Discover pulled forward to new Milestone F7, recurring Crews deferred to Phase 1
 

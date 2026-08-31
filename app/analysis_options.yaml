@@ -19,6 +19,8 @@ analyzer:
     # excluding it here is just telling the analyzer to stay inside the
     # actual project the same way git already does.
     - "build/**"
+    - android/**
+    - ios/**
 
 linter:
   rules:

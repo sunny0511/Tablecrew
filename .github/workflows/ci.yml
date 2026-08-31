@@ -86,12 +86,36 @@ jobs:
       - name: Install dependencies
         working-directory: functions
         run: npm ci
-      - name: Build + run unit tests with coverage
+      # The pass/fail gate. Kept separate from the coverage run below
+      # deliberately (2026-08-31): they were one step, and a crash in
+      # Node's coverage *reporter* failed the whole job while every test
+      # passed.
+      - name: Build + run unit tests
         working-directory: functions
-        run: npm run test:coverage
+        run: npm test
       # 85%+ business-logic coverage is a soft gate per docs/TESTING.md - a
       # human reviews a drop below threshold, CI does not hard-block on it.
       # No coverage-threshold-enforcing step is added here for that reason.
+      #
+      # `|| true` because this step is the *report*, not the gate, and the
+      # step above already failed the job on any real test failure. This
+      # is not papering over a flake: `node --test
+      # --experimental-test-coverage` on Node 20.20.2 exits 1 with
+      # "Could not report code coverage. TypeError: Cannot read properties
+      # of undefined (reading 'line')" while reporting 0 failures, and it
+      # does so on `main` too — reproduced by checking out main and running
+      # it under Node 20, so it is a toolchain regression, not something
+      # this repository introduced. `node-version-file` resolves "20" to
+      # the newest 20.x, so the runner's Node moved under us; earlier PRs
+      # were green on an older patch. Node 22 (what developer machines run
+      # here) reports coverage fine.
+      #
+      # Leaving the old single-step form would mean every future PR is red
+      # for a reason unrelated to its contents, which is the fastest way to
+      # teach a team to ignore CI.
+      - name: Coverage report (informational)
+        working-directory: functions
+        run: npm run test:coverage || true
 
   test-flutter:
     name: "Stage 2 · Unit + widget tests · Flutter"
@@ -161,21 +185,54 @@ jobs:
   typesense-integration-tests:
     name: "Typesense sync trigger · Integration test"
     runs-on: ubuntu-latest
+    # Two fixes, 2026-08-31, after this job's first-ever real run failed at
+    # "Initialize containers" with "Service container typesense failed."
+    # GitHub Actions service containers support only image/env/ports/
+    # options/volumes — there is no `command:`, so docker-compose.yml's
+    # `--data-dir /data --api-key=... --enable-cors` cannot be carried over
+    # and has to be expressed as env vars. That much the original already
+    # did; what it got wrong:
+    #
+    #  1. TYPESENSE_DATA_DIR pointed at /tmp/typesense-data, which does not
+    #     exist inside the image. typesense-server exits rather than
+    #     creating it, so the container was dead before any health check
+    #     ran. /tmp always exists.
+    #  2. The health check ran `curl` *inside* the Typesense container. The
+    #     official image is minimal and is not guaranteed to ship curl; if
+    #     it does not, the check can never pass and Actions reports the
+    #     service as failed even when the server is healthy. Readiness is
+    #     now polled from the runner, which definitely has curl, against
+    #     the mapped port.
+    #
+    # Both were plausible causes of the same message and the log does not
+    # distinguish them, so both are fixed rather than one guessed at. The
+    # "Typesense container logs on failure" step below exists so the next
+    # failure here diagnoses itself instead of costing another round trip.
     services:
       typesense:
         image: typesense/typesense:27.1
         ports:
           - 8108:8108
-        options: >-
-          --health-cmd "curl -f http://localhost:8108/health || exit 1"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
         env:
           TYPESENSE_API_KEY: tablecrew-local-dev-key
-          TYPESENSE_DATA_DIR: /tmp/typesense-data
+          TYPESENSE_DATA_DIR: /tmp
+          TYPESENSE_ENABLE_CORS: "true"
     steps:
       - uses: actions/checkout@v4
+      - name: Wait for Typesense to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8108/health; then
+              echo "Typesense is up."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Typesense did not become healthy within 60s."
+          exit 1
+      - name: Typesense container logs on failure
+        if: failure()
+        run: docker ps -a && docker logs "$(docker ps -aq --filter ancestor=typesense/typesense:27.1 | head -1)" || true
       - uses: actions/setup-node@v4
         with:
           node-version-file: functions/package.json

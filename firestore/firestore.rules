@@ -287,6 +287,36 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    // --- identityVerifications/{submissionId} --- docs/DATABASE.md §3.10/§6
+    // (Milestone F7, ADR 0007 — manual Tier 2 identity verification)
+
+    match /identityVerifications/{submissionId} {
+      // `get` only, and only for the submitting user. Screen 8 listens to
+      // the single document whose id submitIdentityVerification just handed
+      // back, so a single-document read is the entire client need.
+      //
+      // The absence of `list` is deliberate and is the point of splitting
+      // this from a blanket `read`. Writing `allow read: if ... userId ==
+      // request.auth.uid` would be the reflexive thing here and would also
+      // grant list-by-query, letting any signed-in client enumerate their
+      // own submission history — no product surface wants that, and this
+      // collection indexes who submitted government ID and when. Rules
+      // evaluate a list() against the query, not the documents, so the
+      // narrower grant has to be spelled `get`, not `read`.
+      allow get: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+
+      // Every write is Admin SDK only, from submitIdentityVerification /
+      // reviewIdentityVerification (functions/src/identity/index.ts,
+      // docs/API_SPEC.md §3.7). A client create() could not enforce any of
+      // what those callables do — the 3-per-24h rate limit, the
+      // one-open-submission-at-a-time precondition, the existence check on
+      // the referenced Storage objects — and a client update() would be a
+      // direct verification-tier self-elevation path, exactly what
+      // docs/SECURITY.md's rules philosophy forbids.
+      allow list, create, update, delete: if false;
+    }
+
     // --- everything else: default-deny, fails closed not open ---
     // Ratings, Venues, splitRequests, and the locationShares/crew-messages
     // subcollections are out of Milestone F1/F6's scope

@@ -422,54 +422,66 @@ A granular per-category notification toggle (e.g., chat pushes on, day-of remind
 
 ---
 
-### 8. Identity Verification (Tier 2 — ID + Liveness)
+### 8. Identity Verification (Tier 2 — ID + Selfie, Manually Reviewed)
+
+**Rewritten 2026-08 (ADR [0007](adr/0007-manual-identity-verification-for-phase-0.md)).** This screen previously specified an embedded Persona SDK flow with sub-minute automated turnaround. Phase 0 ships manual human review instead, with no vendor SDK, so the capture flow, the timing language, the failure paths, and — most importantly — the claims the copy is allowed to make have all changed. The screen's *title* changed too: "Liveness" is no longer accurate and saying so in a heading the whole team reads would keep the old promise alive in everyone's head.
 
 #### Purpose
-Verify a user's real identity via government ID capture plus a selfie liveness check, run through the Persona SDK, as the gate required before a user may host or join any Open or Discover Table (Tier 2). Framed explicitly as identity verification, never as a criminal background check — that distinction is legally real and must not be blurred in copy.
+Collect a government ID image and a selfie for human review, as the gate required before a user may host or join any Open or Discover Table (Tier 2). Two things this screen must never imply, both legally and operationally real: it is **not** a criminal background check (`SECURITY.md`, `LEGAL.md` §5), and under ADR 0007 it is **not** an automated liveness check either. Copy claiming presence detection would be false during Phase 0.
 
 #### Primary User
-Any Tier-1-only user attempting their first Open/Discover Table action — hosting via Create Table with Open/Discover visibility, or requesting a seat via `requestSeat` on an Open/Discover Table. Crew-only/Closed-Table use never requires this screen.
+Any Tier-1-only user attempting their first Open/Discover Table action — hosting via Create Table with Open/Discover visibility, or requesting a seat on an Open/Discover Table. Crew-only/Closed-Table use never requires this screen.
 
 #### Entry Points
-- Create Table, at the point a user selects "Open" or "Discover" visibility for a new Table
+- Create Table, at the point a user selects "Open" or "Discover" visibility
 - Table Detail / seat-request flow, when a Tier-1-only user taps "Request Seat" on an Open/Discover Table
 - Discover surface generally, on first entry
 
 #### Exit Points
-- Automatic return to the originating flow (Create Table, Table Detail seat request, or Discover) once verification succeeds
-- "Not now" returns to Home, leaving the originating Open/Discover action incomplete (the Table is held as a local draft, or the seat request is not submitted — see Create Table's offline-draft mechanism, which also covers this "come back later" case)
-- **A named failure path, not just a named success path:** when Persona returns a `fail` outcome that is *not* the DOB-mismatch/under-18 case (e.g., unreconcilable capture quality after repeated attempts, a liveness-check mismatch, or a suspected-fraud flag), the status card replaces "Verifying..." with a plain, non-alarming "We couldn't verify you this time" message and a Terracotta "Try again" button that re-launches the Persona SDK flow, capped at 3 attempts in a rolling 24-hour window (a reasoned default, flagged in Future Enhancements). Exhausting the retry cap does not lock the account or silently strand the user: it routes to a "Talk to us" support-contact link (the same support surface referenced from Phone Number Entry) so a human can review manually, and the user returns to Home with the originating Open/Discover action left incomplete, exactly as the "Not now" path handles it. This is distinct from the DOB-mismatch case (Validation Rules below), which is never offered a same-screen retry, since that outcome triggers an account-level Trust & Safety review rather than a capture-quality retry.
+- **Approved:** automatic return to the originating flow (Create Table, seat request, or Discover) once the live status listener reports `approved`.
+- **"Not now":** returns to Home, leaving the originating action incomplete — the Table is held as a local draft, or the seat request is not submitted, reusing Create Table's existing offline-draft mechanism.
+- **Rejected:** the status card shows the reviewer's `decisionReason` (`DATABASE.md` §3.10) and a Terracotta "Try again" button that returns to capture. A rejection is deliberately actionable rather than a dead end — under manual review the most common rejection cause is an unreadable image, which the user can simply fix, so surfacing the reason is worth more here than it was under a vendor's opaque fail code.
+- **Rate limit reached:** at 3 submissions in a rolling 24 hours (`API_SPEC.md` §3.7), "Try again" is replaced by a "Talk to us" support-contact link and the time the window resets. The account is never locked and the user is never stranded.
+- **Held for review:** if an open report exists against the account when a decision is applied, status is `held_for_review` (`SECURITY.md`'s report-filed-mid-verification ordering rule). Copy says a person is taking a closer look and support is reachable — it never says or implies "you have been reported," which would leak the existence and timing of a report to its subject.
 
 #### UI Components
 - Fraunces headline: "Let's verify it's really you"
-- One sentence of Inter body stating plainly: "This confirms your identity so Discover stays real — it is not a background check," plus a secondary line noting the ID/selfie are processed by Persona, TableCrew's verification partner, and are never visible on the public profile
-- Terracotta primary button ("Start verification") launching the embedded Persona SDK flow (ID capture → selfie liveness → Persona-side processing)
+- Inter body, stating plainly what this is and is not: "A real person on our team checks your ID against your selfie. This confirms your identity so Discover stays real — it is not a background check."
+- A second Inter line setting the expectation manual review actually creates: "Reviews usually take a day or so. We'll let you know here as soon as it's done."
+- Two capture cards, each with a thumbnail preview and a re-take affordance: **Government ID** (camera or library) and **Selfie holding your ID**. Requiring the ID to be visible in the selfie is the one cheap thing that meaningfully raises the cost of submitting a stranger's ID — it is not liveness, and the copy does not call it that.
+- A plain-language data line, which is a promise the implementation actually keeps (`DATABASE.md` §3.10): "Your ID is visible only to the person reviewing it, and we delete both photos as soon as your review is done."
+- Terracotta primary button ("Submit for review"), enabled only once both images are captured
 - Persistent "Why do we ask?" expandable disclosure
-- Post-submission status card: "Verifying... usually takes under a minute"
+- Post-submission status card, driven by a live listener on the submission document
 
 #### API Calls
-The Persona SDK handles ID/selfie capture and liveness scoring directly. On Persona's completion callback, the client calls the TableCrew backend to record the verification outcome, which fires `verification_completed`. No TableCrew-built OCR/liveness code exists per `docs/ARCHITECTURE.md`.
+Client uploads both images directly to Cloud Storage under `identity-verifications/{uid}/`, then calls `submitIdentityVerification` with the two upload ids (`API_SPEC.md` §3.7). The client then listens on the returned `identityVerifications/{submissionId}` document for the verdict — the same client-listens-for-a-server-verdict pattern Screen 5's photo moderation already uses. Fires `verification_submitted` on submit and `verification_completed` when a terminal status arrives. **No TableCrew-built OCR or liveness code exists** — not because a vendor handles it, but because under ADR 0007 nothing automated inspects these images at all; a person does.
+
+*(Cross-reference corrected 2026-08: this section previously cited `docs/ARCHITECTURE.md` for the no-OCR/liveness boundary. That claim does not appear in `ARCHITECTURE.md` and never did — the real statement lives in `SECURITY.md`'s Identity Verification Tiers section. A broken cross-reference is a bug in this knowledge base per `CLAUDE.md`, so it is fixed here rather than carried forward.)*
 
 #### Validation Rules
-Persona's own capture-quality checks (glare, crop, blur) surface inline before submission. TableCrew adds one product-level rule on top of Persona's pass/fail: the DOB on the verified government ID is cross-checked against the self-reported DOB from Date of Birth Entry. A match within reasonable data-entry tolerance (e.g., a single-digit typo) passes silently; a mismatch revealing the user is actually under 18, or a discrepancy beyond that tolerance, fails verification and flags the account for a Trust & Safety review rather than a generic "try again."
+Client-side: both images required before submit; each must be under the Storage rules' 10MB image cap, surfaced inline before upload rather than as a failed upload. Server-side: `submitIdentityVerification` rejects a caller who is `ALREADY_VERIFIED`, already has a pending submission (`REVIEW_ALREADY_PENDING`), or is over the rate limit.
+
+The ID/DOB cross-check `SECURITY.md` requires still happens, but it is now a **reviewer attestation** rather than an OCR-extracted comparison: the reviewer confirms the ID's date of birth against the self-reported DOB from Screen 4, and an approve that does not carry that attestation is refused server-side. Nothing about this is visible on this screen — it is stated here because this screen is where the requirement was previously described as automatic.
 
 #### Loading States
-After the Persona SDK hands back capture data, a full-card skeleton-pulse (Card Cream) status card shows "Verifying..." Persona's typical turnaround is under a minute, but the flow supports backgrounding — verification continues server-side and the result arrives as a push notification/in-app banner if the app isn't foregrounded when it completes.
+Upload progress per image (determinate, since byte progress is genuinely known). After submit, a Card Cream skeleton-pulse status card reading "Waiting for review" — never a spinner, per `DESIGN_SYSTEM.md` §8. Unlike the superseded vendor flow, this card is a normal resting state that persists for hours, not a transient one lasting under a minute: it is designed to be left and returned to, and the screen is safe to close.
 
 #### Empty States
-N/A — linear capture flow, no list/collection content. If the user backs out mid-Persona-flow, "Start verification" simply resets to its initial state rather than showing a broken partial-progress view.
+N/A — linear capture flow. Backing out before submit resets to the initial state; captured-but-unsubmitted images are not persisted.
 
 #### Offline Behavior
-The Persona SDK's capture steps (camera-based ID scan, selfie) function offline, but submission requires connectivity. If the device goes offline right after capture, the flow holds captured media locally and shows "Waiting for connection to submit" rather than discarding it, retrying automatically once online. Verification cannot be queued as a deferred background task the way non-safety-critical writes can — Persona must process it server-side before the result can gate an Open/Discover action.
+Capture works offline; submission does not. If the device is offline the primary button is disabled with "Connect to submit for review," and captured images are held in memory for the session rather than discarded. This is deliberately **not** queued through `OfflineMutationQueue`: identity verification is safety-critical and its result gates access to strangers, so it should be submitted deliberately by a present user rather than replayed from a background queue, matching the same reasoning Screens 27–28 use for reports and blocks. Once submitted, the status listener reconnects and resolves normally from cache.
 
 #### Analytics Events
-- `verification_completed` (existing; properties: outcome [pass/fail/manual-review], triggering surface [create_table / seat_request / discover_browse])
+- `verification_submitted` (new; properties: triggering surface [create_table / seat_request / discover_browse], document type)
+- `verification_completed` (existing; properties: outcome [approved / rejected / held_for_review], triggering surface). **Time-to-decision is worth watching from day one** — it is the metric that will say when manual review has stopped scaling, which ADR 0007 predicts well before `MARKETING.md`'s Discover liquidity thresholds.
 
 #### Accessibility Notes
-Persona's embedded SDK view is a third-party surface with its own accessibility implementation that TableCrew does not control directly. The surrounding TableCrew-built screens (intro, status) are fully screen-reader-labeled, and the "Why do we ask?" disclosure is an accessible expandable region. Camera-based ID capture unavoidably requires some sighted assistance for alignment — a known limitation of ID-capture SDKs generally, disclosed in `docs/SECURITY.md` rather than silently ignored.
+Unlike the superseded Persona SDK surface, every part of this screen is TableCrew-built and therefore fully controllable: both capture cards are screen-reader-labeled with their capture state ("Government ID, captured" / "not yet captured"), the status card announces status changes via a live region rather than only rendering them, and "Why do we ask?" is an accessible expandable region. Camera-based ID capture still requires some sighted assistance for framing — a general limitation of ID capture, disclosed rather than ignored — but there is no third-party view whose accessibility TableCrew cannot fix, which is a genuine improvement over the previous design.
 
 #### Future Enhancements
-Persona's accessibility-assisted capture (audio-guided ID alignment) isn't currently available as of this writing — flagged as an open external dependency, not a TableCrew build item, to revisit if/when Persona ships one. Assumption made here: re-verification (ID expiry, Persona flagging a stale check) is out of scope for this v1 spec and would reuse this same screen with different entry-point copy — flagged for Product/Trust & Safety to confirm cadence. The 3-attempts-per-24-hours retry cap on a non-DOB-mismatch failure (see Exit Points) is a reasoned default, not a policy specified elsewhere, and should get explicit Trust & Safety sign-off — too generous a cap invites scripted retry abuse against Persona's capture pipeline, too strict a cap strands a legitimate user with a bad camera or poor lighting.
+This entire screen is provisional by ADR 0007's own terms. When a KYC vendor is contracted, the capture cards are replaced by that vendor's SDK flow and the status card's expected duration collapses back to sub-minute — but the submission contract, the status listener, and the tier-granting path are all deliberately unchanged by that swap. Re-verification cadence (ID expiry, a stale check) remains out of scope and would reuse this screen with different entry-point copy. The 3-per-24-hours cap is inherited from this screen's previous spec rather than newly reasoned, and is now doing double duty as a limit on human reviewer load, which is a different justification than the vendor-abuse one it was originally set for — worth re-deriving once real submission volume exists.
 
 ---
 

@@ -30,13 +30,94 @@ export const PROJECT_ID = process.env.GCLOUD_PROJECT || 'tablecrew-dev';
 export const REGION = 'us-central1';
 export const FUNCTIONS_EMULATOR_ORIGIN = 'http://127.0.0.1:5001';
 export const AUTH_EMULATOR_ORIGIN = 'http://127.0.0.1:9099';
+/**
+ * The Cloud Storage bucket the **Functions runtime** resolves as this
+ * project's default — the one `getStorage().bucket()` returns inside a
+ * function, and therefore the only bucket a test can usefully seed into.
+ *
+ * Do NOT derive this from `process.env.FIREBASE_CONFIG`. That looks like
+ * the principled thing to do and is actively wrong, which cost Milestone
+ * F7 three debugging runs to establish. `firebase emulators:exec` sets a
+ * *different* FIREBASE_CONFIG for the command it runs than the one it
+ * gives the Functions runtime. Observed in a single run, logged from both
+ * sides:
+ *
+ *   exec child      -> storageBucket: "tablecrew-dev.appspot.com"
+ *   Functions runtime -> storageBucket: "tablecrew-dev.firebasestorage.app"
+ *
+ * Both processes were correctly pointed at the Storage emulator
+ * (FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:9199 in both); they were
+ * simply reading and writing two different buckets. The emulator creates
+ * buckets on demand, so neither side errored — seeds landed in one bucket,
+ * `exists()` returned a clean `false` from the other, and the callable
+ * correctly reported UPLOAD_NOT_FOUND. Nothing in the production code was
+ * ever wrong.
+ *
+ * The Functions runtime's value is the real one: Firebase's modern default
+ * bucket naming is `<projectId>.firebasestorage.app` (it changed from
+ * `.appspot.com` in late 2024), and the exec child's config is the CLI
+ * generating a legacy-shaped default rather than resolving the project's
+ * actual bucket. TABLECREW_TEST_STORAGE_BUCKET overrides it if this ever
+ * diverges again — for a renamed project, or a CLI version that changes
+ * its mind.
+ */
+function resolveStorageBucket(): {bucket: string; source: string} {
+  const override = process.env.TABLECREW_TEST_STORAGE_BUCKET;
+  if (override) {
+    return {bucket: override, source: 'TABLECREW_TEST_STORAGE_BUCKET'};
+  }
+  return {
+    bucket: `${PROJECT_ID}.firebasestorage.app`,
+    source: "project default — matches the Functions runtime, NOT the exec child's FIREBASE_CONFIG",
+  };
+}
+
+const RESOLVED_BUCKET = resolveStorageBucket();
+
+export const STORAGE_BUCKET = RESOLVED_BUCKET.bucket;
+
+/**
+ * Prints the bucket in use and where it came from. Any suite that seeds
+ * Storage should call this once, so a bucket-mismatch failure diagnoses
+ * itself from the run output instead of surfacing as a bare 404.
+ */
+export function logStorageBucket(): void {
+  // FIREBASE_STORAGE_EMULATOR_HOST is what routes an Admin SDK Storage
+  // call to the emulator. If it is unset in this process, seed writes go
+  // to *real* Cloud Storage while the function reads the emulator — the
+  // two sides then never see each other's objects no matter how well the
+  // bucket names agree, which is indistinguishable from a naming mismatch
+  // by the resulting 404 alone. Printed so the two causes can be told
+  // apart from one run.
+  console.log(
+      `  [emulatorClient] Storage bucket: ${RESOLVED_BUCKET.bucket} ` +
+    `(source: ${RESOLVED_BUCKET.source})`,
+  );
+  console.log(
+      '  [emulatorClient] FIREBASE_STORAGE_EMULATOR_HOST: ' +
+    `${process.env.FIREBASE_STORAGE_EMULATOR_HOST ?? '(UNSET — Storage calls go to real GCS)'}`,
+  );
+  console.log(
+      `  [emulatorClient] FIREBASE_CONFIG present: ${Boolean(process.env.FIREBASE_CONFIG)}`,
+  );
+}
 
 let app: App | undefined;
 
 /** Idempotent — safe to call from every test file's `before()` hook. */
 export function ensureAdminApp(): App {
   if (!app) {
-    app = getApps()[0] ?? initializeApp({projectId: PROJECT_ID});
+    app = getApps()[0] ?? initializeApp({
+      projectId: PROJECT_ID,
+      // Added Milestone F7: identity.integration.test.ts needs to seed and
+      // assert on Storage objects, and getStorage().bucket() throws with no
+      // default configured. This must name the SAME bucket the Functions
+      // emulator resolves from its own FIREBASE_CONFIG, or the function
+      // under test will look in a different bucket than the test seeded —
+      // see that file's header for the one assumption to check on a first
+      // real run.
+      storageBucket: STORAGE_BUCKET,
+    });
   }
   return app;
 }
@@ -50,7 +131,11 @@ export function ensureAdminApp(): App {
  * string as the `key` query parameter; it never calls out to real Google
  * Identity Platform.
  */
-export async function getIdTokenForUid(uid: string, phoneNumber: string): Promise<string> {
+export async function getIdTokenForUid(
+    uid: string,
+    phoneNumber: string,
+    developerClaims?: Record<string, unknown>,
+): Promise<string> {
   ensureAdminApp();
   try {
     await getAuth().createUser({uid, phoneNumber});
@@ -61,7 +146,10 @@ export async function getIdTokenForUid(uid: string, phoneNumber: string): Promis
     }
   }
 
-  const customToken = await getAuth().createCustomToken(uid);
+  // developerClaims land in the minted ID token's payload, which is how
+  // reviewIdentityVerification's `admin` custom-claim check (Milestone F7)
+  // is exercised without persisting an admin claim on a test user.
+  const customToken = await getAuth().createCustomToken(uid, developerClaims);
 
   const signInUrl = `${AUTH_EMULATOR_ORIGIN}/identitytoolkit.googleapis.com/v1/` +
     'accounts:signInWithCustomToken?key=fake-api-key';

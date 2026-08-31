@@ -410,3 +410,28 @@ export function buildIdempotencyKeyFixture(
     ...overrides,
   };
 }
+
+/**
+ * A Tier 2 identity-verification submission (docs/DATABASE.md §3.10,
+ * Milestone F7). Shaped as the pending_review state, since that is the only
+ * state a client could ever plausibly try to read or tamper with — a
+ * terminal-status document is equally unreachable under the same rules.
+ */
+export function buildIdentityVerificationFixture(
+    overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    userId: 'alice',
+    status: 'pending_review',
+    documentType: 'aadhaar_offline',
+    idDocumentPath: 'identity-verifications/alice/id-1',
+    selfiePath: 'identity-verifications/alice/selfie-1',
+    dobMatchesId: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    decisionReason: null,
+    createdAt: new Date('2026-08-31T00:00:00Z'),
+    updatedAt: new Date('2026-08-31T00:00:00Z'),
+    ...overrides,
+  };
+}

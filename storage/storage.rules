@@ -63,6 +63,29 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Milestone F7 (ADR 0007): government ID + selfie awaiting manual
+    // review. Deliberately STRICTER than the profile-photo path above, and
+    // the difference is the whole point — `create` only, and no read by
+    // anyone, including the owner who just uploaded it.
+    //
+    // No read: a user has no legitimate need to download their own
+    // government ID back out of our bucket (Screen 8 shows a local preview
+    // from the capture buffer, never a round trip), and permitting it would
+    // turn any stolen session token into ID exfiltration. The human
+    // reviewer reads these objects through the Admin SDK/console, which
+    // bypasses rules entirely.
+    //
+    // Create, not write: `write` would also grant update and delete. A
+    // client must not be able to swap the image out from under a review
+    // that is already in flight, nor delete one to destroy the record — the
+    // review callable deletes both objects itself once a decision lands
+    // (docs/DATABASE.md §3.10).
+    match /identity-verifications/{userId}/{uploadId} {
+      allow read: if false;
+      allow create: if isOwner(userId) && isReasonablySizedImage();
+      allow update, delete: if false;
+    }
+
     // Everything else stays denied, matching the F0 scaffold's fail-closed
     // posture — a path with no feature behind it yet gets no rule.
     match /{allPaths=**} {
