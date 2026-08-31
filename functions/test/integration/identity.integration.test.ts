@@ -43,12 +43,42 @@ import {
   callCallable,
   ensureAdminApp,
   getIdTokenForUid,
+  logStorageBucket,
   seedUserProfile,
 } from './emulatorClient';
 
 before(() => {
   ensureAdminApp();
+  // Makes a bucket mismatch self-diagnosing — see emulatorClient's
+  // resolveStorageBucket() for why this suite cares.
+  logStorageBucket();
 });
+
+/**
+ * Asserts a callable succeeded and returns its result.
+ *
+ * Exists because of how this suite first failed: one submit returning 404
+ * produced a single real assertion failure plus four `Cannot read
+ * properties of undefined (reading 'submissionId')` TypeErrors in
+ * downstream tests, which read like four separate bugs and were one. This
+ * turns each of those into a message naming the actual status and error
+ * code at the point it happened.
+ */
+function expectOk<T>(
+    res: {status: number; body: {result?: T; error?: {status?: string; details?: unknown}}},
+    what: string,
+): T {
+  if (res.status !== 200 || !res.body.result) {
+    const code = (res.body.error?.details as {code?: string} | undefined)?.code;
+    throw new Error(
+        `${what} failed: HTTP ${res.status}` +
+      `${code ? ` (${code})` : ''}. If this is UPLOAD_NOT_FOUND on a test ` +
+      'that seeded its uploads, the seeded bucket and the bucket the ' +
+      'function reads have diverged — check the [emulatorClient] line above.',
+    );
+  }
+  return res.body.result;
+}
 
 /**
  * `CallableErrorBody.details` is `unknown` by design in emulatorClient —
@@ -132,16 +162,15 @@ test('submitIdentityVerification: creates a pending submission, then refuses a s
   await seedUpload(uid, 'id-1');
   await seedUpload(uid, 'selfie-1');
 
-  const first = await callCallable<{submissionId: string; status: string}>(
+  const first = expectOk(await callCallable<{submissionId: string; status: string}>(
       'submitIdentityVerification',
       {idDocumentUploadId: 'id-1', selfieUploadId: 'selfie-1', documentType: 'aadhaar_offline'},
       token,
-  );
-  assert.equal(first.status, 200);
-  assert.equal(first.body.result?.status, 'pending_review');
+  ), 'submitIdentityVerification');
+  assert.equal(first.status, 'pending_review');
 
   const doc = await getFirestore()
-      .doc(`identityVerifications/${first.body.result!.submissionId}`)
+      .doc(`identityVerifications/${first.submissionId}`)
       .get();
   assert.equal(doc.data()?.userId, uid);
   assert.equal(doc.data()?.status, 'pending_review');
@@ -175,15 +204,15 @@ test('reviewIdentityVerification: an approve without the DOB attestation never g
   const userToken = await getIdTokenForUid(uid, '+911234540006');
   await seedUpload(uid, 'id-1');
   await seedUpload(uid, 'selfie-1');
-  const submitted = await callCallable<{submissionId: string}>(
+  const submitted = expectOk(await callCallable<{submissionId: string}>(
       'submitIdentityVerification',
       {idDocumentUploadId: 'id-1', selfieUploadId: 'selfie-1', documentType: 'passport'},
       userToken,
-  );
+  ), 'submitIdentityVerification');
 
   const admin = await adminToken('itest-identity-admin1', '+911234540090');
   const res = await callCallable('reviewIdentityVerification', {
-    submissionId: submitted.body.result!.submissionId, decision: 'approve', dobMatchesId: false,
+    submissionId: submitted.submissionId, decision: 'approve', dobMatchesId: false,
   }, admin);
 
   assert.equal(res.status, 400);
@@ -199,15 +228,15 @@ test('reviewIdentityVerification: a reject with no reason is refused', async () 
   const userToken = await getIdTokenForUid(uid, '+911234540007');
   await seedUpload(uid, 'id-1');
   await seedUpload(uid, 'selfie-1');
-  const submitted = await callCallable<{submissionId: string}>(
+  const submitted = expectOk(await callCallable<{submissionId: string}>(
       'submitIdentityVerification',
       {idDocumentUploadId: 'id-1', selfieUploadId: 'selfie-1', documentType: 'passport'},
       userToken,
-  );
+  ), 'submitIdentityVerification');
 
   const admin = await adminToken('itest-identity-admin2', '+911234540091');
   const res = await callCallable('reviewIdentityVerification', {
-    submissionId: submitted.body.result!.submissionId, decision: 'reject', dobMatchesId: false,
+    submissionId: submitted.submissionId, decision: 'reject', dobMatchesId: false,
   }, admin);
 
   assert.equal(res.status, 400);
@@ -220,12 +249,12 @@ test('reviewIdentityVerification: a clean approve grants the tier on both docume
   const userToken = await getIdTokenForUid(uid, '+911234540008');
   await seedUpload(uid, 'id-1');
   await seedUpload(uid, 'selfie-1');
-  const submitted = await callCallable<{submissionId: string}>(
+  const submitted = expectOk(await callCallable<{submissionId: string}>(
       'submitIdentityVerification',
       {idDocumentUploadId: 'id-1', selfieUploadId: 'selfie-1', documentType: 'aadhaar_offline'},
       userToken,
-  );
-  const submissionId = submitted.body.result!.submissionId;
+  ), 'submitIdentityVerification');
+  const submissionId = submitted.submissionId;
 
   const admin = await adminToken('itest-identity-admin3', '+911234540092');
   const res = await callCallable<{status: string; verificationTier: string}>(
@@ -280,11 +309,11 @@ test('reviewIdentityVerification: an open report at apply time holds the grant',
   const userToken = await getIdTokenForUid(uid, '+911234540009');
   await seedUpload(uid, 'id-1');
   await seedUpload(uid, 'selfie-1');
-  const submitted = await callCallable<{submissionId: string}>(
+  const submitted = expectOk(await callCallable<{submissionId: string}>(
       'submitIdentityVerification',
       {idDocumentUploadId: 'id-1', selfieUploadId: 'selfie-1', documentType: 'passport'},
       userToken,
-  );
+  ), 'submitIdentityVerification');
 
   // Filed AFTER submission — the exact ordering docs/SECURITY.md's
   // report-filed-mid-verification rule exists to handle.
@@ -300,7 +329,7 @@ test('reviewIdentityVerification: an open report at apply time holds the grant',
   const admin = await adminToken('itest-identity-admin4', '+911234540093');
   const res = await callCallable<{status: string; verificationTier: string}>(
       'reviewIdentityVerification',
-      {submissionId: submitted.body.result!.submissionId, decision: 'approve', dobMatchesId: true},
+      {submissionId: submitted.submissionId, decision: 'approve', dobMatchesId: true},
       admin,
   );
 

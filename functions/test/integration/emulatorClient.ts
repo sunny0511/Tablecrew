@@ -30,8 +30,60 @@ export const PROJECT_ID = process.env.GCLOUD_PROJECT || 'tablecrew-dev';
 export const REGION = 'us-central1';
 export const FUNCTIONS_EMULATOR_ORIGIN = 'http://127.0.0.1:5001';
 export const AUTH_EMULATOR_ORIGIN = 'http://127.0.0.1:9099';
-/** Default bucket the Functions emulator resolves for this project. */
-export const STORAGE_BUCKET = `${PROJECT_ID}.appspot.com`;
+/**
+ * The Cloud Storage bucket the Functions emulator resolves as this
+ * project's default — the one `getStorage().bucket()` returns *inside* a
+ * function, and therefore the only bucket a test can usefully seed into.
+ *
+ * Derived, not guessed. Milestone F7's first real run of
+ * identity.integration.test.ts failed 5/54 because this was hardcoded to
+ * `<projectId>.appspot.com` while the function looked somewhere else:
+ * every seeded upload was invisible to `submitIdentityVerification`, which
+ * correctly returned UPLOAD_NOT_FOUND. Firebase changed the default-bucket
+ * naming convention (`.appspot.com` -> `.firebasestorage.app`) partway
+ * through this CLI's life, so *any* hardcoded spelling here is a bet on
+ * which firebase-tools version is running.
+ *
+ * `firebase emulators:exec` exports FIREBASE_CONFIG to the command it runs,
+ * carrying the same `storageBucket` the Functions runtime resolves — so
+ * reading it here makes both sides agree by construction rather than by
+ * coincidence.
+ */
+function resolveStorageBucket(): {bucket: string; source: string} {
+  const raw = process.env.FIREBASE_CONFIG;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as {storageBucket?: string};
+      if (parsed.storageBucket) {
+        return {bucket: parsed.storageBucket, source: 'FIREBASE_CONFIG'};
+      }
+    } catch {
+      // Malformed FIREBASE_CONFIG is not this helper's problem to report;
+      // the fallback below still produces a usable bucket, and
+      // logStorageBucket() makes the fallback visible in the run output.
+    }
+  }
+  return {
+    bucket: `${PROJECT_ID}.firebasestorage.app`,
+    source: 'fallback (FIREBASE_CONFIG carried no storageBucket)',
+  };
+}
+
+const RESOLVED_BUCKET = resolveStorageBucket();
+
+export const STORAGE_BUCKET = RESOLVED_BUCKET.bucket;
+
+/**
+ * Prints the bucket in use and where it came from. Any suite that seeds
+ * Storage should call this once, so a bucket-mismatch failure diagnoses
+ * itself from the run output instead of surfacing as a bare 404.
+ */
+export function logStorageBucket(): void {
+  console.log(
+      `  [emulatorClient] Storage bucket: ${RESOLVED_BUCKET.bucket} ` +
+    `(source: ${RESOLVED_BUCKET.source})`,
+  );
+}
 
 let app: App | undefined;
 
