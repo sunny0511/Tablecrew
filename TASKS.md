@@ -236,19 +236,20 @@ A new `onboarding_profile_draft_controller.dart` (`@riverpod`, `OnboardingProfil
 - **New fakes/tests:** `test/fakes/fake_trust_repository.dart`; `report_flow_controller_test.dart` (6), `block_confirmation_controller_test.dart` (3), `report_flow_screen_test.dart` (9), `block_confirmation_screen_test.dart` (5); 3 new `table_detail_screen_test.dart` cases covering the overflow menu's routing and self-row exclusion.
 - **Update:** both this chunk's PR (`f6-trust-safety-client` → `f6-trust-safety-backend`, #2) and the fourth chunk's PR (`f6-trust-safety-backend` → `main`, #1) have been reviewed and merged into `main`. **Milestone F6 is complete.** Milestone F7 (Discover) begins below.
 
-## CI — golden tests failed on an unintended pubspec.lock bump (2026-08-31)
+## CI — the `ci/` goldens are macOS artifacts and have never passed on Linux (2026-08-31)
 
-**Symptom:** `test-flutter` failed 2/184 in CI while passing 186/186 locally. Both failures were `status_chip_golden_test.dart`'s **CI variant** (light and dark).
+**Symptom:** `test-flutter` fails 2/184 on `status_chip_golden_test.dart`'s CI variant (light and dark) while the same command passes locally.
 
-**Why it passed locally:** Alchemist runs the platform goldens by default and the `goldens/ci/` set only under `--dart-death CI=true`, which is what `.github/workflows/ci.yml` passes and what a plain local `flutter test` does not. So the CI goldens had not actually been executed since they were generated — the local suite has never covered them, by design.
+**Confirmed, not inferred:** `flutter test --dart-define=CI=true` passes on the founder's Mac and fails on `ubuntu-latest` with the same Flutter (3.44.8, pinned in `app/.flutter-version` and unchanged since F3). The goldens were generated once, at F3 (`71e3cf4`), on macOS. Alchemist's `ci/` variant uses the Ahem font to make *text* rendering deterministic across platforms — it does not make anti-aliasing, shadows or image filtering deterministic, so a macOS-generated golden compared on Linux can differ by a few pixels indefinitely. Re-running does not help, and regenerating on macOS would reproduce it exactly.
 
-**Cause:** `app/pubspec.lock` was modified on this branch without anyone deciding to modify it. A `flutter pub get` during the Screen 8 verification pass re-resolved six transitive packages, and the agent's `git add -A` swept the result into commit `42b102d` alongside unrelated fixes. The consequential one is **`vector_math` 2.2.0 → 2.4.2** — a transform/geometry library whose output plausibly shifts rendered pixels; the other five (`matcher`, `meta`, `test`, `test_api`, `test_core`) are test infrastructure.
+**The finding that matters more than the failure:** these goldens have never been validated on Linux. CI has been comparing macOS artifacts on ubuntu since F3, which means Recommendation R2's design-system drift protection — the entire reason the harness exists — has been **inert in CI since the day it landed**. `docs/DESIGN_SYSTEM.md` names "engineering hard-codes a close-enough value" as a known drift risk and cites this suite as the cheap guard against it. It has not been guarding anything.
 
-**Fix:** `pubspec.lock` reverted to `main`'s. No dependency was added on this branch (`pubspec.yaml` is unchanged against `main`), so nothing here needs the newer versions. A dependency bump that changes golden output is a real, reviewable change and belongs in its own PR alongside regenerated goldens — not smuggled into an identity-verification branch.
+**Fix (not yet done, needs a Linux Flutter run):** the `ci/` goldens must be generated in the environment that compares them. Two workable routes, in preference order:
 
-**Process lesson, worth more than the fix:** `git add -A` commits whatever is in the tree, including changes made by someone else's tool run that nobody reviewed. Staging by path is the habit that would have caught this at commit time rather than in CI.
+1. A `workflow_dispatch` job using the same `subosito/flutter-action@v2` + `flutter-version-file` setup the other jobs already use, running `flutter test --update-goldens --dart-define=CI=true` on `ubuntu-latest` and uploading `app/test/widgets/goldens/ci/` as an artifact for a human to review and commit. Preferred because it reuses infrastructure already proven to work here, and because golden images are the design-system reference — they should be reviewed, not auto-committed.
+2. A Linux Flutter container run locally (Docker Desktop is already a dependency for the Typesense work). Faster to iterate, but pins a container image tag that nothing else in this repo uses.
 
-**If `flutter pub get` re-resolves these again locally**, that is the signal to do the bump deliberately: update the lock, run `flutter test --dart-define=CI=true` to regenerate/verify the CI goldens, and land both together.
+**Deliberately not done:** loosening the comparator's tolerance or skipping goldens in CI. Both turn a red check green while removing the protection the suite exists to provide, which is worse than the current state — at least a red check is honest about being broken.
 
 ## CI — Typesense service container never started (2026-08-31)
 
