@@ -92,3 +92,11 @@ GoogleService-Info.plist
 *.p12
 *.jks
 *.keystore
+
+# Claude Code per-developer settings. `settings.local.json` holds one
+# machine's tool-permission allowlist with absolute local paths in it
+# (/Users/<name>/...), so it is personal, not shared — the sharable
+# counterpart is `.claude/settings.json`, which is deliberately NOT ignored
+# here. Added 2026-08-31 after the local file was committed by accident;
+# see TASKS.md's note on staging by path rather than `git add -A`.
+.claude/settings.local.json
