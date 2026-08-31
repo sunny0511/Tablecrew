@@ -258,6 +258,21 @@ Fixed by adding the identical codegen step both working jobs already use. This i
 
 **Still unverified beyond that:** whether the Android and iOS builds pass *once they can compile* is a separate question — the founder hit an Android Studio install crash at F4 and no iOS toolchain has ever been confirmed. Compiling is a precondition, not a guarantee, and CI is the first place either has genuinely been attempted.
 
+## CI — the Typesense job loaded zero functions (2026-08-31)
+
+With the service container finally starting (previous entry), the job failed differently and the emulator said why outright:
+
+```
+⬢ functions: Failed to load function definition from source: FirebaseError:
+  functions/lib/index.js does not exist, can't deploy Cloud Functions
+```
+
+`test:integration:typesense` ran `npm run build:test` (tsconfig.test.json → `lib-test/`) but never `npm run build` (tsconfig.json → `lib/`), which is where the Functions emulator loads from. So **no functions were loaded at all**, `onTableWrittenSyncTypesense` never fired, and the three tests that wait for an index write timed out after 10s each.
+
+**A test that passed for the wrong reason, worth fixing separately:** "a Closed Table is never indexed" passed — because nothing was indexed, since nothing was running. An assertion of *absence* succeeds trivially when the whole system under test is down. It should first establish that the trigger is alive (index an eligible Table, observe it) and only then assert the Closed one is absent, otherwise it will keep reporting green through exactly the outage it should catch.
+
+**Fixed at the script level, not in the workflow.** Both `test:integration` and `test:integration:typesense` now run `npm run build` first. The same latent bug exists locally — those suites have only ever worked on developer machines because a stale `lib/` happened to be present from an earlier build. A fresh clone would have hit the identical confusing timeouts. Fixing the CI job alone would have left that trap in place for the next person.
+
 ## CI — Typesense service container never started (2026-08-31)
 
 **First-ever real run of the `typesense-integration-tests` job** (added earlier in F7, flagged then as never exercised on a real runner) failed at "Initialize containers": `Service container typesense failed.`

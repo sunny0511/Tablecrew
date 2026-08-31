@@ -15,8 +15,8 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "test": "npm run build:test && node --test $(find lib-test/test -name '*.test.js' -not -path '*/integration/*' -not -path '*/integration-typesense/*')",
     "test:coverage": "npm run build:test && node --test --experimental-test-coverage $(find lib-test/test -name '*.test.js' -not -path '*/integration/*' -not -path '*/integration-typesense/*')",
-    "test:integration": "npm run build:test && node --test $(find lib-test/test/integration -name '*.test.js')",
-    "test:integration:typesense": "npm run build:test && node --test $(find lib-test/test/integration-typesense -name '*.test.js')",
+    "test:integration": "npm run build && npm run build:test && node --test $(find lib-test/test/integration -name '*.test.js')",
+    "test:integration:typesense": "npm run build && npm run build:test && node --test $(find lib-test/test/integration-typesense -name '*.test.js')",
     "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage",
     "deploy": "firebase deploy --only functions"
   },
