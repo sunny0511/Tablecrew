@@ -79,9 +79,23 @@ export const STORAGE_BUCKET = RESOLVED_BUCKET.bucket;
  * itself from the run output instead of surfacing as a bare 404.
  */
 export function logStorageBucket(): void {
+  // FIREBASE_STORAGE_EMULATOR_HOST is what routes an Admin SDK Storage
+  // call to the emulator. If it is unset in this process, seed writes go
+  // to *real* Cloud Storage while the function reads the emulator — the
+  // two sides then never see each other's objects no matter how well the
+  // bucket names agree, which is indistinguishable from a naming mismatch
+  // by the resulting 404 alone. Printed so the two causes can be told
+  // apart from one run.
   console.log(
       `  [emulatorClient] Storage bucket: ${RESOLVED_BUCKET.bucket} ` +
     `(source: ${RESOLVED_BUCKET.source})`,
+  );
+  console.log(
+      '  [emulatorClient] FIREBASE_STORAGE_EMULATOR_HOST: ' +
+    `${process.env.FIREBASE_STORAGE_EMULATOR_HOST ?? '(UNSET — Storage calls go to real GCS)'}`,
+  );
+  console.log(
+      `  [emulatorClient] FIREBASE_CONFIG present: ${Boolean(process.env.FIREBASE_CONFIG)}`,
   );
 }
 
