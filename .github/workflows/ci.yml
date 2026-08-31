@@ -238,11 +238,49 @@ jobs:
           node-version-file: functions/package.json
           cache: npm
           cache-dependency-path: functions/package-lock.json
+      # Java 21 is required by firebase-tools 15.x, and is set up explicitly
+      # rather than relying on whatever the runner image defaults to.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      # Pinned to the version that demonstrably works, rather than the 13.x
+      # this job was written against. firebase-tools 13's Functions emulator
+      # runtime loads `firebase-functions/lib/v2/index.js` — the whole v2
+      # barrel — which pulls in the Realtime Database provider, then
+      # firebase-admin's database module, then `@firebase/database-compat`,
+      # which declares `@firebase/app` as a **peerDependency** that is not
+      # installed in this tree. The emulator then dies with "Cannot find
+      # module '@firebase/app'" before it can run our trigger. Nothing in
+      # this codebase uses Realtime Database; the dependency is dragged in
+      # entirely by that eager barrel import.
+      #
+      # 15.25.1 is what every local run of these suites uses (54/54 green on
+      # the founder's machine, repeatedly), and it does not take that code
+      # path. Installing the missing peer was tried first and is a dead end:
+      # the current `@firebase/app` (0.16.1) fails with
+      # ERR_PACKAGE_PATH_NOT_EXPORTED against database-compat 2.1.5, so it
+      # would mean pinning a guessed-at older version of a package we do not
+      # use, to satisfy a peer we do not want, for a provider we never call.
+      #
+      # The `rules-tests` job is deliberately left on 13.x: it is green, it
+      # never starts the Functions emulator, and churning a passing job to
+      # remove version drift is not worth the risk. That drift is recorded
+      # in TASKS.md rather than silently carried.
       - name: Install Firebase CLI
-        run: npm install -g firebase-tools@13
+        run: npm install -g firebase-tools@15.25.1
       - name: Install dependencies
         working-directory: functions
         run: npm ci
+      # MUST run before `emulators:exec`, not inside the script it invokes.
+      # The Functions emulator scans for functions at startup, so a build
+      # that happens inside the exec'd command is always too late — the
+      # emulator has already logged "lib/index.js does not exist" and loaded
+      # nothing by then. The package.json scripts also build, which is
+      # correct for their own sake but cannot fix load ordering.
+      - name: Build functions (before the emulator loads them)
+        working-directory: functions
+        run: npm run build
       - name: Run the Typesense sync integration test against the emulators + service container
         env:
           TYPESENSE_HOST: localhost
@@ -287,6 +325,51 @@ jobs:
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
+      # *.g.dart is gitignored (.gitignore), so a clean checkout has no
+      # generated sources and `flutter build` cannot resolve the `part`
+      # directive on every @riverpod provider. lint-flutter and test-flutter
+      # have had this step since F3; these two build jobs never got it,
+      # which is why TASKS.md has recorded them as "never run anywhere"
+      # since F0 — they could not have passed.
+      - name: Generate code (build_runner)
+        working-directory: app
+        run: dart run build_runner build
+      # google-services.json is gitignored on purpose — .gitignore files it
+      # under "Environment / secrets", and ENGINEERING_GUIDELINES tells new
+      # engineers to get it from their onboarding buddy rather than the repo.
+      # CI therefore has to be given it, and a repository secret is the way
+      # that keeps the existing decision intact. Fails loudly with the fix
+      # rather than letting Gradle report a confusing missing-file error.
+      - name: Write google-services.json
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::error::Repository secret GOOGLE_SERVICES_JSON_BASE64 is not set."
+            echo "  base64 -i app/android/app/google-services.json | gh secret set GOOGLE_SERVICES_JSON_BASE64"
+            exit 1
+          fi
+          # A secret pasted as the raw file rather than its base64 encoding
+          # is the likely mistake, and 'base64: invalid input' does not say
+          # so. Detect it and name it.
+          case "$GOOGLE_SERVICES_JSON_BASE64" in
+            *'"project_info"'*|'{'*)
+              echo "::error::GOOGLE_SERVICES_JSON_BASE64 looks like raw JSON, not base64."
+              echo "The secret must hold the *encoded* form. Regenerate it with:"
+              echo "  base64 -i app/android/app/google-services.json | gh secret set GOOGLE_SERVICES_JSON_BASE64"
+              exit 1
+              ;;
+          esac
+          # tr strips the line wrapping some base64 implementations add and
+          # any stray whitespace from a copy-paste; GNU base64 -d rejects it.
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '[:space:]' \
+            | base64 --decode > app/android/app/google-services.json
+          if ! head -c 1 app/android/app/google-services.json | grep -q '{'; then
+            echo "::error::Decoded google-services.json does not start with '{' — the secret decoded to something unexpected."
+            exit 1
+          fi
+          echo "google-services.json written and looks like JSON."
       - name: flutter build apk --debug
         working-directory: app
         run: flutter build apk --debug
@@ -305,6 +388,41 @@ jobs:
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
+      # *.g.dart is gitignored (.gitignore), so a clean checkout has no
+      # generated sources and `flutter build` cannot resolve the `part`
+      # directive on every @riverpod provider. lint-flutter and test-flutter
+      # have had this step since F3; these two build jobs never got it,
+      # which is why TASKS.md has recorded them as "never run anywhere"
+      # since F0 — they could not have passed.
+      - name: Generate code (build_runner)
+        working-directory: app
+        run: dart run build_runner build
+      # Same reasoning as the Android job's google-services.json step.
+      - name: Write GoogleService-Info.plist
+        env:
+          GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GOOGLE_SERVICE_INFO_PLIST_BASE64" ]; then
+            echo "::error::Repository secret GOOGLE_SERVICE_INFO_PLIST_BASE64 is not set."
+            echo "  base64 -i app/ios/Runner/GoogleService-Info.plist | gh secret set GOOGLE_SERVICE_INFO_PLIST_BASE64"
+            exit 1
+          fi
+          case "$GOOGLE_SERVICE_INFO_PLIST_BASE64" in
+            *'<?xml'*|*'<plist'*)
+              echo "::error::GOOGLE_SERVICE_INFO_PLIST_BASE64 looks like a raw plist, not base64."
+              echo "The secret must hold the *encoded* form. Regenerate it with:"
+              echo "  base64 -i app/ios/Runner/GoogleService-Info.plist | gh secret set GOOGLE_SERVICE_INFO_PLIST_BASE64"
+              exit 1
+              ;;
+          esac
+          printf '%s' "$GOOGLE_SERVICE_INFO_PLIST_BASE64" | tr -d '[:space:]' \
+            | base64 --decode > app/ios/Runner/GoogleService-Info.plist
+          if ! grep -q "plist" app/ios/Runner/GoogleService-Info.plist; then
+            echo "::error::Decoded GoogleService-Info.plist does not look like a plist."
+            exit 1
+          fi
+          echo "GoogleService-Info.plist written and looks like a plist."
       - name: flutter build ios --debug --no-codesign
         working-directory: app
         run: flutter build ios --debug --no-codesign

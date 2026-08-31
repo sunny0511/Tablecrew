@@ -250,6 +250,84 @@ Manual dispatch only, on purpose: golden images are the design-system reference,
 
 **Deliberately not done:** loosening the comparator's tolerance or skipping goldens in CI. Both turn a red check green while removing the protection the suite exists to provide, which is worse than the current state — at least a red check is honest about being broken.
 
+## CI — the Flutter build jobs need the Firebase client config (2026-08-31)
+
+With codegen added (below), `build-flutter-android` compiled for the first time and reached Gradle, which failed on:
+
+```
+File google-services.json is missing. The Google Services Plugin cannot function without it.
+```
+
+Both `app/android/app/google-services.json` and `app/ios/Runner/GoogleService-Info.plist` exist on developer machines but are **gitignored on purpose** — `.gitignore` files them under "Environment / secrets", and `ENGINEERING_GUIDELINES.md` tells new engineers to get them from their onboarding buddy rather than the repository. That is a deliberate decision, so CI is given them through repository secrets rather than by committing them and quietly reversing it.
+
+**Two repository secrets are required** (Settings → Secrets and variables → Actions). Until they exist, both build jobs fail with an explicit message naming the missing secret and the command to produce it, rather than a confusing Gradle error:
+
+```
+GOOGLE_SERVICES_JSON_BASE64        base64 -i app/android/app/google-services.json | pbcopy
+GOOGLE_SERVICE_INFO_PLIST_BASE64   base64 -i app/ios/Runner/GoogleService-Info.plist | pbcopy
+```
+
+**Worth revisiting, not decided here:** neither file is really a secret in the cryptographic sense — `google-services.json` ships inside every APK and anyone can extract it, and the API keys in it are client identifiers protected by App Check and security rules, not bearer credentials. Several teams commit them for exactly that reason. This repository classified them as secrets, and the CI change respects that; but if that classification was reflexive rather than reasoned, committing the **dev** project's config would remove a moving part from CI and from onboarding. A decision for the founder, not something to change as a side effect of fixing a build.
+
+**Also in this pass:** `compileSdk` in `app/android/app/build.gradle.kts` is pinned to 37 rather than inherited from `flutter.compileSdkVersion`, because a plugin in the current dependency set requires it and the Gradle output says so directly. `compileSdk` governs which APIs are compiled against, not the minimum supported device (`minSdk` does that), so raising it is backward compatible. The tradeoff is that it no longer tracks the Flutter SDK automatically and has to be moved by hand when a plugin outgrows it — a loud failure rather than a silent upgrade, which matches R5's pin-exact-versions convention.
+
+## CI — the Flutter build jobs were missing codegen (2026-08-31)
+
+`build-flutter-android` and `build-flutter-ios` have been recorded as "never run anywhere" since F0. Reading them against the jobs that do work explains why, with no guesswork needed: `lint-flutter` and `test-flutter` each run `dart run build_runner build`; the two build jobs never did. `*.g.dart` is gitignored, so a clean CI checkout contains no generated sources, and `flutter build` cannot resolve the `part 'x.g.dart'` directive that every `@riverpod` provider declares. They could not have compiled on any commit, ever.
+
+Fixed by adding the identical codegen step both working jobs already use. This is a higher-confidence fix than the other CI work in this section because it copies proven configuration from the same file rather than reasoning about an external system.
+
+**Still unverified beyond that:** whether the Android and iOS builds pass *once they can compile* is a separate question — the founder hit an Android Studio install crash at F4 and no iOS toolchain has ever been confirmed. Compiling is a precondition, not a guarantee, and CI is the first place either has genuinely been attempted.
+
+## CI — Typesense: `Cannot find module '@firebase/app'` (2026-08-31)
+
+With the build-ordering fix in place the emulator finally loaded the trigger, and the job failed on something genuinely new:
+
+```
+⚠ functions: Cannot find module '@firebase/app'
+  ← @firebase/database-compat ← firebase-admin/lib/database
+  ← firebase-functions/lib/common/providers/database.js
+  ← firebase-functions/lib/v2/index.js
+  ← firebase-tools/lib/emulator/functionsEmulatorRuntime.js
+⚠ Your function was killed because it raised an unhandled error.
+```
+
+**Chain, confirmed by reading the packages rather than inferring:** firebase-tools **13.x**'s emulator runtime loads `firebase-functions/lib/v2/index.js` — the entire v2 barrel — which eagerly pulls the Realtime Database provider, then `firebase-admin`'s database module, then `@firebase/database-compat`, whose `package.json` declares `@firebase/app` as a **peerDependency** (`0.x`). That peer is absent from both `functions/node_modules` and `package-lock.json`. Nothing in this codebase uses Realtime Database; it is dragged in wholly by the barrel import.
+
+**Reproduced and fixed against evidence, not theory.** `node -e "require('firebase-functions/lib/v2/index.js')"` fails in this tree exactly as CI does. Installing the missing peer was tried first and is a dead end: current `@firebase/app` (0.16.1) fails against `database-compat` 2.1.5 with `ERR_PACKAGE_PATH_NOT_EXPORTED`, so it would mean pinning a guessed-at older version of a package we do not use, to satisfy a peer we do not want, for a provider we never call.
+
+The job now installs **firebase-tools 15.25.1** — the version every local run of these suites uses, repeatedly green — plus an explicit `actions/setup-java@v4` for the Java 21 that 15.x requires. 15.x does not take that code path.
+
+**`rules-tests` deliberately stays on 13.x.** It is green, it never starts the Functions emulator, and churning a passing job purely to remove version drift is not a trade worth making. The drift is recorded here rather than silently carried — and it is worth closing on a calmer day, since two CLI majors in one workflow is exactly what produced this.
+
+## CI — the Typesense job loaded zero functions (2026-08-31)
+
+With the service container finally starting (previous entry), the job failed differently and the emulator said why outright:
+
+```
+⬢ functions: Failed to load function definition from source: FirebaseError:
+  functions/lib/index.js does not exist, can't deploy Cloud Functions
+```
+
+`test:integration:typesense` ran `npm run build:test` (tsconfig.test.json → `lib-test/`) but never `npm run build` (tsconfig.json → `lib/`), which is where the Functions emulator loads from. So **no functions were loaded at all**, `onTableWrittenSyncTypesense` never fired, and the three tests that wait for an index write timed out after 10s each.
+
+**A test that passed for the wrong reason, worth fixing separately:** "a Closed Table is never indexed" passed — because nothing was indexed, since nothing was running. An assertion of *absence* succeeds trivially when the whole system under test is down. It should first establish that the trigger is alive (index an eligible Table, observe it) and only then assert the Closed one is absent, otherwise it will keep reporting green through exactly the outage it should catch.
+
+**Two-part fix, and the first attempt was in the wrong place.** Adding `npm run build` to the npm scripts was necessary but not sufficient, and the run log said so plainly in its ordering:
+
+```
+i functions: Watching ... for Cloud Functions...
+⬢ functions: Failed to load function definition ... lib/index.js does not exist
+i Running script: npm --prefix functions run test:integration:typesense
+> npm run build
+```
+
+`firebase emulators:exec` starts the emulators **first** and only then runs the command it was given. The Functions emulator scans for functions at startup, so a build inside the exec'd script can never be early enough — the emulator has already given up and loaded nothing. The build has to be its own CI step *before* `emulators:exec`, which it now is.
+
+The script-level build stays: it is still correct for the suite's own sake, and it closes the fresh-clone trap where these tests have only ever passed locally because a stale `lib/` happened to be lying around from an earlier build. But it cannot fix load ordering, and it was a misreading to think it would — the sequence was visible in the first run's log.
+
+**Local runs need the same ordering.** `firebase emulators:exec ... "npm --prefix functions run test:integration"` carries the identical trap on a clean checkout; run `npm --prefix functions run build` before it.
+
 ## CI — Typesense service container never started (2026-08-31)
 
 **First-ever real run of the `typesense-integration-tests` job** (added earlier in F7, flagged then as never exercised on a real runner) failed at "Initialize containers": `Service container typesense failed.`
