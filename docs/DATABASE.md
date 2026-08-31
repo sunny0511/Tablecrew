@@ -470,6 +470,51 @@ rateLimits/{bucketId}                  // bucketId = `${uid}_${family}_${windowS
 
 **Mechanics:** fixed-window, not sliding-window or token-bucket — `createTable`'s own spec text already described a "counter keyed by uid+day," and a fixed window is the simplest mechanism that satisfies every limit this milestone's scope actually needs (day-granularity for `createTable`, hour-granularity for everything else) without a more complex sliding-window structure nothing here calls for. The well-known fixed-window edge case (a burst straddling a window boundary can momentarily allow up to roughly 2x the stated limit) is an accepted tradeoff at this traffic scale, not an oversight — revisit if real abuse patterns ever exploit it specifically. Each check is its own small atomic Firestore transaction (read the bucket, compare `count` against the limit, increment or reject) — see `API_SPEC.md`'s `createTable` abuse-prevention note for why this doesn't need to be merged into whatever transaction the endpoint's own business logic runs.
 
+### 3.10 `identityVerifications/{submissionId}`
+
+Added Milestone F7 (ADR [0007](adr/0007-manual-identity-verification-for-phase-0.md)). One document per Tier 2 submission, and the queue a human reviewer actually works from. Every field is written **exclusively** by the two callables in `API_SPEC.md` §3.7 via the Admin SDK — the client creates nothing here directly; it calls `submitIdentityVerification` and then listens on the returned document for the verdict, the same client-listens-for-a-server-verdict shape §3.1a established for photo moderation.
+
+This collection exists at all only because ADR 0007 replaced a vendor flow with human review. Under the superseded ADR 0005 design there was no submission record to keep — Persona held the case and TableCrew held an opaque reference on the user document. The trade is recorded in ADR 0007; the schema below is written to keep its blast radius small, which is why the two `*Path` fields are nulled the moment a decision lands.
+
+```
+identityVerifications/{submissionId}    // PRIVATE — a single-document `get` by the submitting user only (§6);
+                                          // no client `list` is permitted, so the review queue is not enumerable
+                                          // by anyone but an Admin SDK caller. Every field Functions-only-writable.
+├─ userId: string                       // the submitting uid, taken from context.auth server-side, never the request
+├─ status: string                       // enum: "pending_review" | "approved" | "rejected" | "held_for_review"
+│                                       // held_for_review is the ACCOUNT_UNDER_REVIEW outcome (API_SPEC.md §3.7):
+│                                       // an open report existed at the moment the grant was about to apply, so the
+│                                       // tier was not granted and the decision awaits Trust & Safety, per
+│                                       // SECURITY.md's report-filed-mid-verification ordering rule
+├─ documentType: string                 // enum: "aadhaar_offline" | "passport" | "drivers_license" | "voter_id"
+│                                       // | "other" — SELF-DECLARED by the submitter, a reviewer convenience only.
+│                                       // Never treated as evidence of anything; the reviewer confirms the real
+│                                       // document type by looking at the image.
+├─ idDocumentPath: string | null        // Cloud Storage path under identity-verifications/{userId}/. Set at
+│                                       // submission, set back to null the moment a decision is applied — the
+│                                       // object itself is deleted in the same callable invocation (ADR 0007's
+│                                       // data-minimization consequence). A non-null value here on a terminal
+│                                       // status would mean image deletion failed, and is worth alerting on.
+├─ selfiePath: string | null            // same lifecycle as idDocumentPath
+├─ dobMatchesId: boolean | null         // REVIEWER ATTESTATION, not an extracted value — no OCR runs under ADR 0007.
+│                                       // The reviewer confirms the ID's date of birth against
+│                                       // private/profile.dateOfBirth, per SECURITY.md's age cross-check
+│                                       // requirement. An approve carrying false is rejected as invalid-argument
+│                                       // rather than granting the tier, so the check cannot be skipped silently.
+├─ reviewedBy: string | null            // the admin uid that decided this submission — the accountability record
+│                                       // for a manual process, deliberately retained after the images are gone
+├─ reviewedAt: timestamp | null
+├─ decisionReason: string | null        // required on a reject (API_SPEC.md §3.7's REJECTION_REASON_REQUIRED);
+│                                       // surfaced to the user on Screen 8 so a rejection is actionable rather
+│                                       // than a dead end
+├─ createdAt: timestamp
+└─ updatedAt: timestamp
+```
+
+**What deliberately is *not* stored here:** no name, no ID number, no address, no date of birth, no OCR output, and no copy or thumbnail of either image. The reviewer reads those off the image in the Cloud Storage console and attests to the one comparison that matters (`dobMatchesId`); nothing ID-derived is persisted. After a decision this document holds only who decided what, when, and why — which is exactly the audit trail a manual gate needs and nothing more. `submissionId` is server-generated, not client-supplied, so a client cannot probe for or collide with another user's submission.
+
+**Retention.** A terminal-status document is retained as part of the account's Trust & Safety record and is hard-deleted with the rest of the private profile on account deletion (§7). A `pending_review` document whose images have not been reviewed does not expire on its own — at Phase 0 volume the queue is small enough that an aging pending submission is a signal a human should act on, not garbage to collect. That stops being true at scale, and is one of the several reasons ADR 0007 records this design as a bridge rather than a destination.
+
 ## 4. Denormalization Decisions and Rationale
 
 Firestore has no server-side joins, so every screen that would need one in a relational model requires a deliberate choice: denormalize (copy a snapshot of the data you need onto the document you're reading) or fan out multiple reads client-side. We denormalize aggressively for data that is (a) read far more often than it changes, and (b) tolerable to display slightly stale for a short window. Specific decisions:
@@ -496,6 +541,8 @@ Firestore automatically indexes every field for single-field equality/range quer
 - **Split-request lookup by Table:** `splitRequests` collection, single-field index on `tableId` (Firestore's automatic single-field indexing covers this) — supports "does this Table already have an active split request" checks in `createSplitRequest`; a composite on (`hostId` ASC, `createdAt` DESC) supports a host's payment-history view and the scheduled anonymization sweep's per-user lookup (§7).
 
 We deliberately keep the number of composite indexes small: each composite index has a storage and write-cost overhead (every index is updated on every relevant write), and over-indexing is a real Firestore cost driver (`FIREBASE.md` §cost management) — we add a composite index only when a specific product query needs it, not speculatively.
+
+**`identityVerifications` — the reviewer queue (added Milestone F7).** A composite index on (`status` ASC, `createdAt` ASC) backs the only query this collection has: an Admin SDK caller listing `pending_review` submissions oldest-first to work the review queue. There is deliberately no client-facing query at all — §6's rules permit a single-document `get` and no `list` — so this index exists purely for the administrative path, and is declared in `firestore/firestore.indexes.json` alongside the others rather than left to be discovered by a failed query in the console.
 
 ## 6. Security Rules Philosophy
 
@@ -673,6 +720,10 @@ Key structural principles this sketch encodes, generalized for reuse in every ne
 3. **Reports and moderation data are structurally unreadable by any client role**, including the involved parties — this is enforced at the rules layer, not just at the application/UI layer, so there is no code path (including a bug in the app) that could leak a report to its subject.
 4. **Immutability where the product doesn't need mutability** (chat messages, ratings) is enforced in rules, not just convention, which closes off an entire class of tampering/dispute scenarios by construction.
 5. **Firestore rules cannot redact individual fields from a document read — a rule is document-granular, not field-granular.** Any collection with a mix of broadly-readable and owner-only fields (the `users` collection is the concrete case, §3.1) must be split into a public document and a private document (or subcollection); relying on "well, the sensitive field just won't be queried by honest clients" is not a security boundary, since any authenticated client can read a document's raw payload directly. We treat this as a standing design rule, not a one-off fix for `users`: the first question in reviewing a new collection's rules is "does every field allowed by the broadest `allow read` on this document actually need to be that broadly visible," and if not, split the document before shipping the rule.
+
+**`identityVerifications/{submissionId}` (added Milestone F7, ADR 0007).** `allow get: if isSignedIn() && resource.data.userId == request.auth.uid;` — and nothing else. No `list` (the queue must not be enumerable by any client), no `create`/`update`/`delete` (every write is Admin SDK, from the two callables in `API_SPEC.md` §3.7). The asymmetry is deliberate and worth stating explicitly, because it differs from every other owner-readable collection in this document: a user may read the single submission whose id they were handed by `submitIdentityVerification`'s response, and has no way to discover any other. Granting `list` here — even scoped to `userId == request.auth.uid`, which would be the reflexive thing to write — would serve no product purpose (Screen 8 only ever listens to the submission it just created) while widening a collection that indexes who has submitted government ID and when.
+
+The corresponding **Storage** rules are stricter still, and are the more important half of this pair: `identity-verifications/{userId}/**` permits `create` by the owner and **no read by anyone**, including the owner who uploaded it. This differs from the profile-photo path (`FIREBASE.md` §2.5), which allows the owner to read their own pending upload back. A user has no legitimate need to re-download their own government ID from our bucket, and permitting it would turn any session-token compromise into ID exfiltration. The reviewer reads the object through the Admin SDK/console, which bypasses rules entirely.
 
 ## 7. Data Retention and Deletion (GDPR/CCPA-Style Requests)
 
