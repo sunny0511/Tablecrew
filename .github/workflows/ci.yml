@@ -344,15 +344,32 @@ jobs:
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
+          set -euo pipefail
           if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
             echo "::error::Repository secret GOOGLE_SERVICES_JSON_BASE64 is not set."
-            echo "Create it from the dev project's config:"
-            echo "  base64 -i app/android/app/google-services.json | pbcopy"
-            echo "then add it under Settings > Secrets and variables > Actions."
+            echo "  base64 -i app/android/app/google-services.json | gh secret set GOOGLE_SERVICES_JSON_BASE64"
             exit 1
           fi
-          echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode \
-            > app/android/app/google-services.json
+          # A secret pasted as the raw file rather than its base64 encoding
+          # is the likely mistake, and 'base64: invalid input' does not say
+          # so. Detect it and name it.
+          case "$GOOGLE_SERVICES_JSON_BASE64" in
+            *'"project_info"'*|'{'*)
+              echo "::error::GOOGLE_SERVICES_JSON_BASE64 looks like raw JSON, not base64."
+              echo "The secret must hold the *encoded* form. Regenerate it with:"
+              echo "  base64 -i app/android/app/google-services.json | gh secret set GOOGLE_SERVICES_JSON_BASE64"
+              exit 1
+              ;;
+          esac
+          # tr strips the line wrapping some base64 implementations add and
+          # any stray whitespace from a copy-paste; GNU base64 -d rejects it.
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '[:space:]' \
+            | base64 --decode > app/android/app/google-services.json
+          if ! head -c 1 app/android/app/google-services.json | grep -q '{'; then
+            echo "::error::Decoded google-services.json does not start with '{' — the secret decoded to something unexpected."
+            exit 1
+          fi
+          echo "google-services.json written and looks like JSON."
       - name: flutter build apk --debug
         working-directory: app
         run: flutter build apk --debug
@@ -385,15 +402,27 @@ jobs:
         env:
           GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
         run: |
+          set -euo pipefail
           if [ -z "$GOOGLE_SERVICE_INFO_PLIST_BASE64" ]; then
             echo "::error::Repository secret GOOGLE_SERVICE_INFO_PLIST_BASE64 is not set."
-            echo "Create it from the dev project's config:"
-            echo "  base64 -i app/ios/Runner/GoogleService-Info.plist | pbcopy"
-            echo "then add it under Settings > Secrets and variables > Actions."
+            echo "  base64 -i app/ios/Runner/GoogleService-Info.plist | gh secret set GOOGLE_SERVICE_INFO_PLIST_BASE64"
             exit 1
           fi
-          echo "$GOOGLE_SERVICE_INFO_PLIST_BASE64" | base64 --decode \
-            > app/ios/Runner/GoogleService-Info.plist
+          case "$GOOGLE_SERVICE_INFO_PLIST_BASE64" in
+            *'<?xml'*|*'<plist'*)
+              echo "::error::GOOGLE_SERVICE_INFO_PLIST_BASE64 looks like a raw plist, not base64."
+              echo "The secret must hold the *encoded* form. Regenerate it with:"
+              echo "  base64 -i app/ios/Runner/GoogleService-Info.plist | gh secret set GOOGLE_SERVICE_INFO_PLIST_BASE64"
+              exit 1
+              ;;
+          esac
+          printf '%s' "$GOOGLE_SERVICE_INFO_PLIST_BASE64" | tr -d '[:space:]' \
+            | base64 --decode > app/ios/Runner/GoogleService-Info.plist
+          if ! grep -q "plist" app/ios/Runner/GoogleService-Info.plist; then
+            echo "::error::Decoded GoogleService-Info.plist does not look like a plist."
+            exit 1
+          fi
+          echo "GoogleService-Info.plist written and looks like a plist."
       - name: flutter build ios --debug --no-codesign
         working-directory: app
         run: flutter build ios --debug --no-codesign
