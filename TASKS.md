@@ -236,6 +236,19 @@ A new `onboarding_profile_draft_controller.dart` (`@riverpod`, `OnboardingProfil
 - **New fakes/tests:** `test/fakes/fake_trust_repository.dart`; `report_flow_controller_test.dart` (6), `block_confirmation_controller_test.dart` (3), `report_flow_screen_test.dart` (9), `block_confirmation_screen_test.dart` (5); 3 new `table_detail_screen_test.dart` cases covering the overflow menu's routing and self-row exclusion.
 - **Update:** both this chunk's PR (`f6-trust-safety-client` → `f6-trust-safety-backend`, #2) and the fourth chunk's PR (`f6-trust-safety-backend` → `main`, #1) have been reviewed and merged into `main`. **Milestone F6 is complete.** Milestone F7 (Discover) begins below.
 
+## CI — Typesense service container never started (2026-08-31)
+
+**First-ever real run of the `typesense-integration-tests` job** (added earlier in F7, flagged then as never exercised on a real runner) failed at "Initialize containers": `Service container typesense failed.`
+
+**Cause:** GitHub Actions service containers accept only `image`/`env`/`ports`/`options`/`volumes` — **there is no `command:`**. `docker-compose.yml` starts Typesense with `command: "--data-dir /data --api-key=... --enable-cors"`, which cannot be carried across, so the job expressed it as env vars. Two things were still wrong, and the failure message does not distinguish them, so both are fixed rather than one guessed at:
+
+1. `TYPESENSE_DATA_DIR` pointed at `/tmp/typesense-data`, which does not exist inside the image. `typesense-server` exits rather than creating it, so the container was dead before any health check ran. Now `/tmp`.
+2. The health check ran `curl` **inside** the Typesense container. The official image is minimal and is not guaranteed to ship curl; if it does not, the check can never pass and Actions marks the service failed even when the server is fine. Readiness is now polled from the runner — which definitely has curl — against the mapped port.
+
+A `docker logs` step guarded by `if: failure()` was added so the next failure here diagnoses itself. **Unverified:** no Docker is available in the environment the agent runs in, so this fix is reasoned from the Actions service-container contract and the image's behavior, not reproduced. CI is the first real test of it.
+
+**Related drift worth a look, not fixed here:** this job installs `firebase-tools@13` while the rules job and every local run use 15.x. Not the cause of this failure, but two CLI majors apart in one workflow is the kind of gap that produces a confusing failure later.
+
 ## CI — Node 20 coverage-reporter regression (2026-08-31)
 
 **Symptom:** the `test-functions` job fails with every test passing:
