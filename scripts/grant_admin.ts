@@ -29,6 +29,14 @@
  *   npm run grant:admin -- --project=tablecrew-dev --uid=abc123 --yes
  *   npm run grant:admin -- --project=tablecrew-dev --uid=abc123 --revoke --yes
  *
+ * Add --create-if-missing to create the Auth record when none exists yet.
+ * A reviewer is not necessarily an app user — until someone signs in
+ * through the client, tablecrew-dev has no accounts at all, and the person
+ * doing manual Tier 2 review needs an identity before they can be given
+ * one. Only valid with --phone, and only for a grant (never a revoke:
+ * creating an account in order to remove a claim it never had is
+ * incoherent, and would silently mint accounts on a typo).
+ *
  * The claim only appears in an ID token after that account's next sign-in
  * or token refresh (Firebase refreshes roughly hourly). Signing out and
  * back in on the device is the fastest way to pick it up — until then the
@@ -46,6 +54,7 @@ interface Args {
   revoke: boolean;
   yes: boolean;
   productionAcknowledged: boolean;
+  createIfMissing: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -60,6 +69,7 @@ function parseArgs(argv: string[]): Args {
     revoke: argv.includes('--revoke'),
     yes: argv.includes('--yes'),
     productionAcknowledged: argv.includes('--i-understand-this-is-production'),
+    createIfMissing: argv.includes('--create-if-missing'),
   };
 }
 
@@ -97,11 +107,26 @@ async function main(): Promise<void> {
   admin.initializeApp({projectId: args.project});
   const auth = admin.auth();
 
+  if (args.createIfMissing && args.uid) {
+    fail('--create-if-missing needs --phone, not --uid: a uid cannot be minted.');
+  }
+  if (args.createIfMissing && args.revoke) {
+    fail('--create-if-missing makes no sense with --revoke.');
+  }
+
   const user = args.uid ?
     await auth.getUser(args.uid).catch(() => fail(`No account with uid ${args.uid}.`)) :
-    await auth.getUserByPhoneNumber(args.phone!).catch(
-        () => fail(`No account with phone number ${args.phone}.`),
-    );
+    await auth.getUserByPhoneNumber(args.phone!).catch(async () => {
+      if (!args.createIfMissing) {
+        fail(
+            `No account with phone number ${args.phone}. ` +
+          'Re-run with --create-if-missing to create one.',
+        );
+      }
+      const created = await auth.createUser({phoneNumber: args.phone});
+      console.log(`\n  + Created a new Auth account for ${args.phone}.`);
+      return created;
+    });
 
   console.log(`\n  Project : ${args.project}`);
   console.log(`  Account : ${user.uid}`);
