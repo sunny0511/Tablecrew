@@ -31,41 +31,44 @@ export const REGION = 'us-central1';
 export const FUNCTIONS_EMULATOR_ORIGIN = 'http://127.0.0.1:5001';
 export const AUTH_EMULATOR_ORIGIN = 'http://127.0.0.1:9099';
 /**
- * The Cloud Storage bucket the Functions emulator resolves as this
- * project's default — the one `getStorage().bucket()` returns *inside* a
+ * The Cloud Storage bucket the **Functions runtime** resolves as this
+ * project's default — the one `getStorage().bucket()` returns inside a
  * function, and therefore the only bucket a test can usefully seed into.
  *
- * Derived, not guessed. Milestone F7's first real run of
- * identity.integration.test.ts failed 5/54 because this was hardcoded to
- * `<projectId>.appspot.com` while the function looked somewhere else:
- * every seeded upload was invisible to `submitIdentityVerification`, which
- * correctly returned UPLOAD_NOT_FOUND. Firebase changed the default-bucket
- * naming convention (`.appspot.com` -> `.firebasestorage.app`) partway
- * through this CLI's life, so *any* hardcoded spelling here is a bet on
- * which firebase-tools version is running.
+ * Do NOT derive this from `process.env.FIREBASE_CONFIG`. That looks like
+ * the principled thing to do and is actively wrong, which cost Milestone
+ * F7 three debugging runs to establish. `firebase emulators:exec` sets a
+ * *different* FIREBASE_CONFIG for the command it runs than the one it
+ * gives the Functions runtime. Observed in a single run, logged from both
+ * sides:
  *
- * `firebase emulators:exec` exports FIREBASE_CONFIG to the command it runs,
- * carrying the same `storageBucket` the Functions runtime resolves — so
- * reading it here makes both sides agree by construction rather than by
- * coincidence.
+ *   exec child      -> storageBucket: "tablecrew-dev.appspot.com"
+ *   Functions runtime -> storageBucket: "tablecrew-dev.firebasestorage.app"
+ *
+ * Both processes were correctly pointed at the Storage emulator
+ * (FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:9199 in both); they were
+ * simply reading and writing two different buckets. The emulator creates
+ * buckets on demand, so neither side errored — seeds landed in one bucket,
+ * `exists()` returned a clean `false` from the other, and the callable
+ * correctly reported UPLOAD_NOT_FOUND. Nothing in the production code was
+ * ever wrong.
+ *
+ * The Functions runtime's value is the real one: Firebase's modern default
+ * bucket naming is `<projectId>.firebasestorage.app` (it changed from
+ * `.appspot.com` in late 2024), and the exec child's config is the CLI
+ * generating a legacy-shaped default rather than resolving the project's
+ * actual bucket. TABLECREW_TEST_STORAGE_BUCKET overrides it if this ever
+ * diverges again — for a renamed project, or a CLI version that changes
+ * its mind.
  */
 function resolveStorageBucket(): {bucket: string; source: string} {
-  const raw = process.env.FIREBASE_CONFIG;
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as {storageBucket?: string};
-      if (parsed.storageBucket) {
-        return {bucket: parsed.storageBucket, source: 'FIREBASE_CONFIG'};
-      }
-    } catch {
-      // Malformed FIREBASE_CONFIG is not this helper's problem to report;
-      // the fallback below still produces a usable bucket, and
-      // logStorageBucket() makes the fallback visible in the run output.
-    }
+  const override = process.env.TABLECREW_TEST_STORAGE_BUCKET;
+  if (override) {
+    return {bucket: override, source: 'TABLECREW_TEST_STORAGE_BUCKET'};
   }
   return {
     bucket: `${PROJECT_ID}.firebasestorage.app`,
-    source: 'fallback (FIREBASE_CONFIG carried no storageBucket)',
+    source: "project default — matches the Functions runtime, NOT the exec child's FIREBASE_CONFIG",
   };
 }
 
