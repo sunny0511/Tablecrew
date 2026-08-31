@@ -200,7 +200,28 @@ interface ReviewRequest {
  * `verificationTier: "id_verified"`.
  */
 export const reviewIdentityVerification = onCall<ReviewRequest>(
-    {enforceAppCheck: ENFORCE_APP_CHECK},
+    // App Check is deliberately NOT enforced here, unlike every other
+    // callable in this codebase. App Check attests that a request came from
+    // a genuine instance of *your app*. Nothing about this endpoint is
+    // called from the app: there is no admin UI (an organization console is
+    // Phase 4 per docs/ROADMAP.md), and the only caller is an operator
+    // running scripts/review_identity.ts. Requiring app attestation from a
+    // caller that is not an app is a category error — and in practice it
+    // made the endpoint uncallable, which meant ADR 0007's one required
+    // human step had no working client at all.
+    //
+    // This weakens nothing that was actually protecting the endpoint. App
+    // Check does not authenticate a *user*; authorization here is the
+    // `admin` custom claim, which only the Admin SDK can set
+    // (scripts/grant_admin.ts) and which no client can grant itself. A
+    // caller still needs a Firebase ID token carrying that claim, and the
+    // claim remains unreachable from any client. What is lost is a bot
+    // deterrent on an endpoint whose entire audience is one operator.
+    //
+    // If an admin console is ever built as a real Firebase app, turn this
+    // back on: at that point the caller *is* an app, and attestation starts
+    // meaning something again.
+    {enforceAppCheck: false},
     async (request) => {
       if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Sign-in required.');

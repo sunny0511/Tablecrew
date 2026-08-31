@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "seed:staging": "npm run build && node lib/seed_staging.js",
-    "grant:admin": "npm run build && node lib/grant_admin.js"
+    "grant:admin": "npm run build && node lib/grant_admin.js",
+    "review": "npm run build && node lib/review_identity.js"
   },
   "devDependencies": {
     "firebase-admin": "12.6.0",
