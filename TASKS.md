@@ -290,12 +290,12 @@ firebase emulators:exec --only auth,firestore,functions,storage   --project tabl
 
 **Still open in this chunk — Screen 8's Flutter client is NOT built.** The repository layer, controller, screen, and its widget tests are the remaining work. Deliberately not written blind: no Flutter/Dart toolchain exists in the Cowork VM, and this repository's own history is a long list of real bugs that only a live `flutter analyze`/`flutter test` surfaced (F5's `SplashScreen` autoDispose race, F6's `StatefulBuilder` dialog bug, the `OfflineMutationQueue` late-field race). Shipping ~600 lines of uncompiled Dart would contradict the practice that caught every one of those. The backend contract it builds against is settled and verified, so this is a clean pick-up: `submitIdentityVerification` + a `identityVerifications/{submissionId}` snapshot listener, following `watchPhotoModerationStatus`'s existing sealed-class-per-state shape in `app/lib/data/user_profile_repository.dart`.
 
-**Not done, needs the founder:** granting yourself the `admin` custom claim. Nothing in the codebase can do this — it is a one-time Admin SDK call against `tablecrew-dev`/`-prod`:
+**Not done, needs the founder:** granting yourself the `admin` custom claim. `scripts/grant_admin.ts` (new this chunk) does it — nothing in the app can, deliberately, since the claim lives in Firebase Auth rather than Firestore so no application code path can hand out review authority:
 ```
-// node, with Admin SDK credentials for the target project
-await getAuth().setCustomUserClaims('<your-uid>', {admin: true});
+cd scripts && npm install          # first time only
+npm run grant:admin -- --project=tablecrew-dev --phone=+91XXXXXXXXXX --yes
 ```
-The claim only appears in a token after the next sign-in/refresh. Until this is done, `reviewIdentityVerification` correctly refuses every caller, including you.
+Needs `gcloud auth application-default login` (or `GOOGLE_APPLICATION_CREDENTIALS`) for the target project, the same requirement `seed_staging.ts` already carries. The claim only reaches an ID token after that account's next sign-in or token refresh — until then `reviewIdentityVerification` correctly refuses every caller, including you, which is right behavior rather than a bug. `--revoke` takes it back.
 
 ## Update — 2026-08 Foundation re-scoped: Discover pulled forward to new Milestone F7, recurring Crews deferred to Phase 1
 
