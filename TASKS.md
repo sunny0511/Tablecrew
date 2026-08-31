@@ -305,7 +305,9 @@ Two fixes, both aimed at the class of problem rather than this instance:
 
 - **`expectOk()` stops one failure from reporting as five.** Every happy-path callable now goes through a helper that fails with the actual HTTP status and error code at the point it happened, instead of letting an undefined result cascade into TypeErrors in later tests.
 
-**Screen 8's Flutter client is written (2026-08-31) — NOT yet verified.** No Flutter/Dart toolchain exists in the Cowork VM, so nothing below has been compiled, analyzed, or run. It needs the same founder-machine pass every Flutter chunk since F3 has had, and should not be treated as done until it goes green:
+**Screen 8's Flutter client is built and verified (2026-08-31): `flutter analyze` clean, `flutter test` 186/186, up from 169.** Written with no toolchain available to the agent, so the first real run found two compile errors and eleven lints — the same pattern every Flutter chunk in this repo has had since F3, and the reason none of them are claimed done on hand-review. The two errors are worth recording because both were avoidable by reading rather than inferring: `SpacingTokens` does not exist (the class in `spacing_tokens.dart` is `TCSpacing`, as every other screen already knew), and `_screenPage` takes `(Widget, GoRouterState)`, not one argument. A third, subtler one took a second run: an `// ignore:` comment only applies to the line immediately below it, so an ignore placed above a multi-line rationale comment silently does nothing and reports as `unnecessary_ignore`.
+
+Verification command set, for the next Flutter chunk:
 
 ```
 cd app

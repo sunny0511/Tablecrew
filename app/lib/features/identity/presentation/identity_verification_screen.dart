@@ -275,8 +275,7 @@ class _CaptureCard extends StatelessWidget {
         child: ListTile(
           leading: captured
               ? ClipRRect(
-                  borderRadius:
-                      BorderRadius.circular(TCSpacing.radiusControl),
+                  borderRadius: BorderRadius.circular(TCSpacing.radiusControl),
                   child: Image.memory(
                     bytes!,
                     width: 48,

@@ -74,11 +74,13 @@ class FakeIdentityVerificationRepository
     required String selfieUploadId,
     required IdentityDocumentType documentType,
   }) async {
-    submitCalls.add((
-      idDocumentUploadId: idDocumentUploadId,
-      selfieUploadId: selfieUploadId,
-      documentType: documentType,
-    ),);
+    submitCalls.add(
+      (
+        idDocumentUploadId: idDocumentUploadId,
+        selfieUploadId: selfieUploadId,
+        documentType: documentType,
+      ),
+    );
     final error = submitError;
     if (error != null) throw error;
     return submissionIdResult;

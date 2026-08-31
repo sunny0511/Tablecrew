@@ -25,12 +25,16 @@ part 'identity_upload_repository.g.dart';
 /// round trip. See docs/DATABASE.md §6's note on why: a user has no reason
 /// to download their own government ID out of our bucket, and permitting it
 /// would turn a stolen session token into ID exfiltration.
-// ignore: one_member_abstracts — the interface exists for test
-// substitution, not polymorphism: every repository in this codebase is
-// exposed as an overridable provider (docs/ENGINEERING_GUIDELINES.md), and
-// collapsing this to a top-level function would remove the seam the
-// widget/controller tests override. It may well grow a second method when
-// re-verification lands.
+// The interface exists for test substitution, not polymorphism: every
+// repository in this codebase is exposed as an overridable provider
+// (docs/ENGINEERING_GUIDELINES.md), and collapsing this to a top-level
+// function would remove the seam the widget and controller tests override.
+// It will likely grow a second method when re-verification lands.
+//
+// The ignore has to be the line immediately above the declaration — a
+// comment block between them makes it apply to the next comment instead,
+// which is what `unnecessary_ignore` was reporting on the first run.
+// ignore: one_member_abstracts
 abstract interface class IdentityUploadRepository {
   /// Uploads [bytes] to a freshly-minted path under the caller's own
   /// prefix and returns the generated `uploadId`, which
