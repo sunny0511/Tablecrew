@@ -279,6 +279,27 @@ Fixed by adding the identical codegen step both working jobs already use. This i
 
 **Still unverified beyond that:** whether the Android and iOS builds pass *once they can compile* is a separate question — the founder hit an Android Studio install crash at F4 and no iOS toolchain has ever been confirmed. Compiling is a precondition, not a guarantee, and CI is the first place either has genuinely been attempted.
 
+## CI — Typesense: `Cannot find module '@firebase/app'` (2026-08-31)
+
+With the build-ordering fix in place the emulator finally loaded the trigger, and the job failed on something genuinely new:
+
+```
+⚠ functions: Cannot find module '@firebase/app'
+  ← @firebase/database-compat ← firebase-admin/lib/database
+  ← firebase-functions/lib/common/providers/database.js
+  ← firebase-functions/lib/v2/index.js
+  ← firebase-tools/lib/emulator/functionsEmulatorRuntime.js
+⚠ Your function was killed because it raised an unhandled error.
+```
+
+**Chain, confirmed by reading the packages rather than inferring:** firebase-tools **13.x**'s emulator runtime loads `firebase-functions/lib/v2/index.js` — the entire v2 barrel — which eagerly pulls the Realtime Database provider, then `firebase-admin`'s database module, then `@firebase/database-compat`, whose `package.json` declares `@firebase/app` as a **peerDependency** (`0.x`). That peer is absent from both `functions/node_modules` and `package-lock.json`. Nothing in this codebase uses Realtime Database; it is dragged in wholly by the barrel import.
+
+**Reproduced and fixed against evidence, not theory.** `node -e "require('firebase-functions/lib/v2/index.js')"` fails in this tree exactly as CI does. Installing the missing peer was tried first and is a dead end: current `@firebase/app` (0.16.1) fails against `database-compat` 2.1.5 with `ERR_PACKAGE_PATH_NOT_EXPORTED`, so it would mean pinning a guessed-at older version of a package we do not use, to satisfy a peer we do not want, for a provider we never call.
+
+The job now installs **firebase-tools 15.25.1** — the version every local run of these suites uses, repeatedly green — plus an explicit `actions/setup-java@v4` for the Java 21 that 15.x requires. 15.x does not take that code path.
+
+**`rules-tests` deliberately stays on 13.x.** It is green, it never starts the Functions emulator, and churning a passing job purely to remove version drift is not a trade worth making. The drift is recorded here rather than silently carried — and it is worth closing on a calmer day, since two CLI majors in one workflow is exactly what produced this.
+
 ## CI — the Typesense job loaded zero functions (2026-08-31)
 
 With the service container finally starting (previous entry), the job failed differently and the emulator said why outright:

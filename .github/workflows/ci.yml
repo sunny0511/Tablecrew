@@ -238,8 +238,37 @@ jobs:
           node-version-file: functions/package.json
           cache: npm
           cache-dependency-path: functions/package-lock.json
+      # Java 21 is required by firebase-tools 15.x, and is set up explicitly
+      # rather than relying on whatever the runner image defaults to.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      # Pinned to the version that demonstrably works, rather than the 13.x
+      # this job was written against. firebase-tools 13's Functions emulator
+      # runtime loads `firebase-functions/lib/v2/index.js` — the whole v2
+      # barrel — which pulls in the Realtime Database provider, then
+      # firebase-admin's database module, then `@firebase/database-compat`,
+      # which declares `@firebase/app` as a **peerDependency** that is not
+      # installed in this tree. The emulator then dies with "Cannot find
+      # module '@firebase/app'" before it can run our trigger. Nothing in
+      # this codebase uses Realtime Database; the dependency is dragged in
+      # entirely by that eager barrel import.
+      #
+      # 15.25.1 is what every local run of these suites uses (54/54 green on
+      # the founder's machine, repeatedly), and it does not take that code
+      # path. Installing the missing peer was tried first and is a dead end:
+      # the current `@firebase/app` (0.16.1) fails with
+      # ERR_PACKAGE_PATH_NOT_EXPORTED against database-compat 2.1.5, so it
+      # would mean pinning a guessed-at older version of a package we do not
+      # use, to satisfy a peer we do not want, for a provider we never call.
+      #
+      # The `rules-tests` job is deliberately left on 13.x: it is green, it
+      # never starts the Functions emulator, and churning a passing job to
+      # remove version drift is not worth the risk. That drift is recorded
+      # in TASKS.md rather than silently carried.
       - name: Install Firebase CLI
-        run: npm install -g firebase-tools@13
+        run: npm install -g firebase-tools@15.25.1
       - name: Install dependencies
         working-directory: functions
         run: npm ci
