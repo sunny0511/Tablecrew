@@ -250,6 +250,14 @@ Manual dispatch only, on purpose: golden images are the design-system reference,
 
 **Deliberately not done:** loosening the comparator's tolerance or skipping goldens in CI. Both turn a red check green while removing the protection the suite exists to provide, which is worse than the current state — at least a red check is honest about being broken.
 
+## CI — the Flutter build jobs were missing codegen (2026-08-31)
+
+`build-flutter-android` and `build-flutter-ios` have been recorded as "never run anywhere" since F0. Reading them against the jobs that do work explains why, with no guesswork needed: `lint-flutter` and `test-flutter` each run `dart run build_runner build`; the two build jobs never did. `*.g.dart` is gitignored, so a clean CI checkout contains no generated sources, and `flutter build` cannot resolve the `part 'x.g.dart'` directive that every `@riverpod` provider declares. They could not have compiled on any commit, ever.
+
+Fixed by adding the identical codegen step both working jobs already use. This is a higher-confidence fix than the other CI work in this section because it copies proven configuration from the same file rather than reasoning about an external system.
+
+**Still unverified beyond that:** whether the Android and iOS builds pass *once they can compile* is a separate question — the founder hit an Android Studio install crash at F4 and no iOS toolchain has ever been confirmed. Compiling is a precondition, not a guarantee, and CI is the first place either has genuinely been attempted.
+
 ## CI — Typesense service container never started (2026-08-31)
 
 **First-ever real run of the `typesense-integration-tests` job** (added earlier in F7, flagged then as never exercised on a real runner) failed at "Initialize containers": `Service container typesense failed.`

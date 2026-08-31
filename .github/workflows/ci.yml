@@ -287,6 +287,15 @@ jobs:
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
+      # *.g.dart is gitignored (.gitignore), so a clean checkout has no
+      # generated sources and `flutter build` cannot resolve the `part`
+      # directive on every @riverpod provider. lint-flutter and test-flutter
+      # have had this step since F3; these two build jobs never got it,
+      # which is why TASKS.md has recorded them as "never run anywhere"
+      # since F0 — they could not have passed.
+      - name: Generate code (build_runner)
+        working-directory: app
+        run: dart run build_runner build
       - name: flutter build apk --debug
         working-directory: app
         run: flutter build apk --debug
@@ -305,6 +314,15 @@ jobs:
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
+      # *.g.dart is gitignored (.gitignore), so a clean checkout has no
+      # generated sources and `flutter build` cannot resolve the `part`
+      # directive on every @riverpod provider. lint-flutter and test-flutter
+      # have had this step since F3; these two build jobs never got it,
+      # which is why TASKS.md has recorded them as "never run anywhere"
+      # since F0 — they could not have passed.
+      - name: Generate code (build_runner)
+        working-directory: app
+        run: dart run build_runner build
       - name: flutter build ios --debug --no-codesign
         working-directory: app
         run: flutter build ios --debug --no-codesign
