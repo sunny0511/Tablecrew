@@ -148,7 +148,8 @@ export const submitIdentityVerification = onCall<SubmitRequest>(
       }
 
       const ref = db.collection('identityVerifications').doc();
-      await ref.set({
+      const batch = db.batch();
+      batch.set(ref, {
         userId: uid,
         status: 'pending_review',
         documentType,
@@ -161,6 +162,25 @@ export const submitIdentityVerification = onCall<SubmitRequest>(
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
+
+      // A deterministic pointer to the open submission, on a document the
+      // owner can already read. Without it the client has no way to
+      // rediscover its own pending review after an app restart: this
+      // callable returns the id exactly once, and `firestore.rules`
+      // deliberately denies `list` on identityVerifications so the
+      // collection cannot be queried. A user who reinstalled mid-review
+      // would then be permanently stuck — unable to see the pending
+      // status, and blocked from resubmitting by REVIEW_ALREADY_PENDING
+      // until a human intervened by hand.
+      //
+      // Deliberately a single pointer rather than a relaxed `list` rule:
+      // it answers "what am I waiting on" without making the collection
+      // enumerable, needs no index, and adds no readable history.
+      batch.set(db.doc(`users/${uid}/private/profile`), {
+        verification: {pendingSubmissionId: ref.id},
+      }, {merge: true});
+
+      await batch.commit();
 
       return {submissionId: ref.id, status: 'pending_review'};
     },
@@ -267,6 +287,7 @@ export const reviewIdentityVerification = onCall<ReviewRequest>(
             idVerified: true,
             verificationTier: 'id_verified',
             verifiedAt: now,
+            pendingSubmissionId: null,
           },
         }, {merge: true});
         batch.set(db.doc(`users/${submission.userId}`), {
@@ -277,6 +298,16 @@ export const reviewIdentityVerification = onCall<ReviewRequest>(
 
       const terminalStatus = outcome.kind === 'approved' ? 'approved' :
         outcome.kind === 'rejected' ? 'rejected' : 'held_for_review';
+
+      // Cleared on every terminal outcome, not just approval — a rejected
+      // or held submission is no longer the thing the user is waiting on,
+      // and leaving a stale pointer would send Screen 8 back to a decided
+      // submission instead of letting them start a new one.
+      if (outcome.kind !== 'approved') {
+        batch.set(db.doc(`users/${submission.userId}/private/profile`), {
+          verification: {pendingSubmissionId: null},
+        }, {merge: true});
+      }
 
       batch.update(ref, {
         status: terminalStatus,

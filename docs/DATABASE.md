@@ -67,7 +67,19 @@ users/{userId}/private/profile          // PRIVATE — readable only by request.
 │   ├─ phoneVerified: boolean
 │   ├─ idVerified: boolean              // true only after successful third-party ID-verification flow (see SECURITY.md)
 │   ├─ verificationTier: string         // enum: "unverified" | "phone_verified" | "id_verified"
-│   └─ verifiedAt: timestamp | null
+│   ├─ verifiedAt: timestamp | null
+│   └─ pendingSubmissionId: string | null  // Milestone F7 (ADR 0007): the open
+│                                       // identityVerifications/{submissionId} the user is waiting on,
+│                                       // or null. Exists because submitIdentityVerification returns
+│                                       // that id exactly once and §6 deliberately denies `list` on
+│                                       // identityVerifications — without this pointer a client that
+│                                       // restarted mid-review could neither see its pending status nor
+│                                       // submit again (REVIEW_ALREADY_PENDING), a permanent dead end
+│                                       // needing manual intervention. A single pointer rather than a
+│                                       // relaxed list rule: answers "what am I waiting on" without
+│                                       // making the collection enumerable or adding readable history.
+│                                       // Set by submitIdentityVerification, cleared by
+│                                       // reviewIdentityVerification on EVERY terminal outcome
 ├─ dateOfBirth: string                  // ISO 8601 date ("YYYY-MM-DD"), self-reported at Screen 4 (Date of Birth
 │                                       // Entry) and persisted as part of the account-creation write
 │                                       // (`completeAccountSetup`, API_SPEC.md §3.9) alongside the server-side 18+

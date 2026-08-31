@@ -178,6 +178,16 @@ test('submitIdentityVerification: creates a pending submission, then refuses a s
   assert.equal(doc.data()?.dobMatchesId, null);
   assert.equal(doc.data()?.reviewedBy, null);
 
+  // The pointer that makes this submission rediscoverable after an app
+  // restart — without it, a client that lost the id has no way back to a
+  // pending review, since `list` is denied on this collection.
+  const profileAfterSubmit = await getFirestore()
+      .doc(`users/${uid}/private/profile`).get();
+  assert.equal(
+      profileAfterSubmit.data()?.verification?.pendingSubmissionId,
+      first.submissionId,
+  );
+
   const second = await callCallable('submitIdentityVerification', {
     idDocumentUploadId: 'id-1', selfieUploadId: 'selfie-1', documentType: 'aadhaar_offline',
   }, token);
@@ -276,6 +286,10 @@ test('reviewIdentityVerification: a clean approve grants the tier on both docume
   const publicDoc = await db.doc(`users/${uid}`).get();
   assert.equal(publicDoc.data()?.verificationTierPublic, 'id_verified');
 
+  // Cleared once decided — a stale pointer would send Screen 8 back to a
+  // finished submission instead of letting the user move on.
+  assert.equal(profile.data()?.verification?.pendingSubmissionId, null);
+
   const submission = await db.doc(`identityVerifications/${submissionId}`).get();
   assert.equal(submission.data()?.status, 'approved');
   assert.equal(submission.data()?.reviewedBy, 'itest-identity-admin3');
@@ -339,4 +353,6 @@ test('reviewIdentityVerification: an open report at apply time holds the grant',
 
   const profile = await getFirestore().doc(`users/${uid}/private/profile`).get();
   assert.notEqual(profile.data()?.verification?.verificationTier, 'id_verified');
+  // Cleared on a held outcome too, not only on approval.
+  assert.equal(profile.data()?.verification?.pendingSubmissionId, null);
 });
